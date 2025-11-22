@@ -4,15 +4,17 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class YUVFrame {
     var width: Int = 0
     var height: Int = 0
-    var y: ByteArray? = null
+    var y: ByteBuffer? = null
     var yStride: Int = 0
-    var u: ByteArray? = null
+    var u: ByteBuffer? = null
     var uStride: Int = 0
-    var v: ByteArray? = null
+    var v: ByteBuffer? = null
     var vStride: Int = 0
 }
 
@@ -85,24 +87,18 @@ class HEVCDecoder {
 
                                     // Y plane
                                     val yPlane = image.planes[0]
-                                    val yBuffer = yPlane.buffer
                                     yuvFrame.yStride = yPlane.rowStride
-                                    yuvFrame.y = ByteArray(yBuffer.remaining())
-                                    yBuffer.get(yuvFrame.y)
+                                    yuvFrame.y = copyPlaneBuffer(yPlane.buffer)
 
                                     // U plane
                                     val uPlane = image.planes[1]
-                                    val uBuffer = uPlane.buffer
                                     yuvFrame.uStride = uPlane.rowStride
-                                    yuvFrame.u = ByteArray(uBuffer.remaining())
-                                    uBuffer.get(yuvFrame.u)
+                                    yuvFrame.u = copyPlaneBuffer(uPlane.buffer)
 
                                     // V plane
                                     val vPlane = image.planes[2]
-                                    val vBuffer = vPlane.buffer
                                     yuvFrame.vStride = vPlane.rowStride
-                                    yuvFrame.v = ByteArray(vBuffer.remaining())
-                                    vBuffer.get(yuvFrame.v)
+                                    yuvFrame.v = copyPlaneBuffer(vPlane.buffer)
 
                                     image.close()
                                     // Since we only need the first frame, we can return immediately.
@@ -131,6 +127,17 @@ class HEVCDecoder {
                 }
             }
             return null // Return null if decoding fails or no frame is produced
+        }
+
+        private fun copyPlaneBuffer(source: ByteBuffer): ByteBuffer {
+            val duplicate = source.duplicate()
+            duplicate.order(ByteOrder.nativeOrder())
+            duplicate.position(0)
+            val copy = ByteBuffer.allocateDirect(duplicate.remaining())
+                .order(ByteOrder.nativeOrder())
+            copy.put(duplicate)
+            copy.position(0)
+            return copy
         }
     }
 }
