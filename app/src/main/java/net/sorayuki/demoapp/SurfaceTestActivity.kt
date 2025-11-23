@@ -1,11 +1,9 @@
 package net.sorayuki.demoapp
 
-import android.graphics.ColorSpace
 import android.opengl.*
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
-import android.renderscript.ScriptGroup
 import android.util.Log
 import android.view.Surface
 import android.view.SurfaceHolder
@@ -17,10 +15,10 @@ import net.sorayuki.demoapp.databinding.ActivitySurfacetestBinding
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
-import kotlin.div
 
 class SurfaceTestActivity : AppCompatActivity() {
-    
+    class Color(val r: Float, val g: Float, val b: Float)
+
     lateinit var bgThread: HandlerThread
     lateinit var bgHandler: Handler
 
@@ -28,8 +26,8 @@ class SurfaceTestActivity : AppCompatActivity() {
 
     lateinit var binding: ActivitySurfacetestBinding
 
-    val EGL_GL_COLORSPACE_DISPLAY_P3_EXT = 0x3363
-    val EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT = 0x3350
+    val EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT = 0x3490
+    val EGL_GL_COLORSPACE_BT2020_LINEAR_EXT = 0x333F
     val EGL_GL_COLORSPACE_BT2020_PQ_EXT = 0x3340
     val EGL_GL_COLORSPACE_BT2020_HLG_EXT = 0x3540
 
@@ -75,34 +73,54 @@ class SurfaceTestActivity : AppCompatActivity() {
         bgThread.start()
         bgHandler = Handler(bgThread.looper)
 
+        val black = Color(0.0f, 0.0f, 0.0f)
+
+        val getColor = fun(): Color? {
+            return when (binding.radioGroup.checkedRadioButtonId) {
+                binding.radioR.id -> Color(1.0f, 0.0f, 0.0f)
+                binding.radioG.id -> Color(0.0f, 1.0f, 0.0f)
+                binding.radioB.id -> Color(0.0f, 0.0f, 1.0f)
+                else -> null
+            }
+        }
+
+        val isnull = fun(clr: Color?): Boolean {
+            return clr == null
+        }
+
         binding.btnSRGB.setOnClickListener {
+            val clr = getColor()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_SRGB, true)
-                draw(8, EGL15.EGL_GL_COLORSPACE_SRGB, false)
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false)
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, clr ?: black, isnull(clr))
             }
         }
         binding.btnP3.setOnClickListener {
+            val clr = getColor()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_SRGB, true)
-                draw(8, EGL_GL_COLORSPACE_DISPLAY_P3_EXT, false)
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false)
+                draw(8, EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT, clr ?: black, isnull(clr))
             }
         }
-        binding.btnScRGB.setOnClickListener {
+        binding.btnBT2020.setOnClickListener {
+            val clr = getColor()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_SRGB, true)
-                draw(16, EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT, false)
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false)
+                draw(10, EGL_GL_COLORSPACE_BT2020_LINEAR_EXT, clr ?: black, isnull(clr))
             }
         }
         binding.btnHLG.setOnClickListener {
+            val clr = getColor()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_SRGB, true)
-                draw(10, EGL_GL_COLORSPACE_BT2020_HLG_EXT, false)
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false)
+                draw(10, EGL_GL_COLORSPACE_BT2020_HLG_EXT, clr ?: black, isnull(clr))
             }
         }
         binding.btnPQ.setOnClickListener {
+            val clr = getColor()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_SRGB, true)
-                draw(10, EGL_GL_COLORSPACE_BT2020_PQ_EXT, false)
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false)
+                draw(10, EGL_GL_COLORSPACE_BT2020_PQ_EXT, clr ?: black, isnull(clr))
             }
         }
     }
@@ -111,7 +129,7 @@ class SurfaceTestActivity : AppCompatActivity() {
     var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
     var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
 
-    fun draw(bits: Int, colorspace: Int, isClear: Boolean) {
+    fun draw(bits: Int, colorspace: Int, clr: Color, shouldDraw: Boolean) {
         if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
             eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
             val eglVer = IntArray(2)
@@ -161,9 +179,9 @@ class SurfaceTestActivity : AppCompatActivity() {
         EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)
         Log.d("SORAYUKI", "surface size is ${binding.surfaceView.width}x${binding.surfaceView.height}")
         GLES31.glViewport(0, 0, binding.surfaceView.width, binding.surfaceView.height)
-        GLES31.glClearColor(0.0f, 0.0f, 0.0f, 1.0f)
+        GLES31.glClearColor(clr.r, clr.g, clr.b, 1.0f)
         GLES31.glClear(GLES31.GL_COLOR_BUFFER_BIT)
-        if (!isClear)
+        if (shouldDraw)
             drawFrame(colorspace)
         EGL14.eglSwapBuffers(eglDisplay, eglSurface)
         EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
@@ -277,53 +295,6 @@ class SurfaceTestActivity : AppCompatActivity() {
             );
         }
         
-        vec3 toneMapBT2390(vec3 linear) {
-            // BT.2020 亮度权重
-            const vec3 BT2020_LUMA = vec3(0.2627, 0.6780, 0.0593);
-            
-            // 计算场景参考亮度
-            // 输入 linear 的单位是 1/1000 nit，即 linear = 1.0 对应 1000 nits
-            float srcLuminance = dot(linear, BT2020_LUMA);
-            
-            if (srcLuminance <= EPS) {
-                return linear;
-            }
-            
-            // srcLuminance 已经是以 1000 nits 为单位，直接转换为 nits
-            float srcLuminanceNits = srcLuminance * 1000.0;
-            
-            // BT.2390 EETF - 色调映射到 SDR (100 nits)
-            float targetLuminanceNits;
-            
-            if (srcLuminanceNits <= SDR_PEAK_LUMINANCE) {
-                // 低亮度区域：线性传递
-                targetLuminanceNits = srcLuminanceNits;
-            } else {
-                // 高亮度区域：使用软压缩曲线
-                // 简化的 BT.2390 EETF 曲线
-                float maxLuminanceNits = HLG_PEAK_LUMINANCE;  // 1000 nits
-                
-                // 归一化到 [0, 1] 范围
-                float pNorm = (srcLuminanceNits - SDR_PEAK_LUMINANCE) / (maxLuminanceNits - SDR_PEAK_LUMINANCE);
-                pNorm = clamp(pNorm, 0.0, 1.0);
-                
-                // 软膝点压缩：使用二次函数进行软裁剪
-                // 从 100 nits 平滑过渡，避免突变
-                float compressed = 1.0 - pNorm * pNorm;
-                
-                // 映射到 SDR 范围的剩余空间 (实际上很小，主要用于高光)
-                float headroom = 10.0;  // 给高光留 10 nits 的空间
-                targetLuminanceNits = SDR_PEAK_LUMINANCE - headroom * (1.0 - compressed);
-            }
-            
-            // 计算缩放比例，转换回 1/1000 nit 单位
-            float targetLuminance = targetLuminanceNits / 1000.0;
-            float scale = targetLuminance / max(EPS, srcLuminance);
-            
-            // 应用缩放，保持色度
-            return linear * scale;
-        }
-        
         vec3 convertToTarget(vec3 hlg) {
             if (uTargetSpace == 0) { // SRGB
                 vec3 linear = inverseHLGColor(hlg);
@@ -343,9 +314,13 @@ class SurfaceTestActivity : AppCompatActivity() {
                     srgbOetf(p3Linear.g),
                     srgbOetf(p3Linear.b)
                 );
-            } else if (uTargetSpace == 2) { // Linear
-                vec3 xyz = BT2020_TO_XYZ * inverseHLGColor(hlg);
-                return XYZ_TO_SRGB * xyz;
+            } else if (uTargetSpace == 2) { // BT.2020
+                vec3 linear = inverseHLGColor(hlg);
+                return vec3(
+                    linear.r,
+                    linear.g,
+                    linear.b
+                );
             } else if (uTargetSpace == 3) { // HLG
                 return hlg;
             } else { // PQ
@@ -373,8 +348,8 @@ class SurfaceTestActivity : AppCompatActivity() {
         var program = 0
         val quadBuffer = createFullScreenQuad()
         val targetSpaceIndex = when (colorspace) {
-            EGL_GL_COLORSPACE_DISPLAY_P3_EXT -> 1
-            EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT -> 2
+            EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT -> 1
+            EGL_GL_COLORSPACE_BT2020_LINEAR_EXT -> 2
             EGL_GL_COLORSPACE_BT2020_HLG_EXT -> 3
             EGL_GL_COLORSPACE_BT2020_PQ_EXT -> 4
             else -> 0
