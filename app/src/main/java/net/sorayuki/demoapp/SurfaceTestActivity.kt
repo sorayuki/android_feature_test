@@ -80,6 +80,7 @@ class SurfaceTestActivity : AppCompatActivity() {
                 binding.radioR.id -> Color(1.0f, 0.0f, 0.0f)
                 binding.radioG.id -> Color(0.0f, 1.0f, 0.0f)
                 binding.radioB.id -> Color(0.0f, 0.0f, 1.0f)
+                binding.radioW.id -> Color(1.0f, 1.0f, 1.0f)
                 else -> null
             }
         }
