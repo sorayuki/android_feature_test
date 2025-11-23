@@ -1,4 +1,4 @@
-package net.sorayuki.demoapp
+package net.sorayuki.featuretest
 
 import android.opengl.*
 import android.os.Bundle
@@ -11,7 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import net.sorayuki.demoapp.databinding.ActivitySurfacetestBinding
+import net.sorayuki.featuretest.databinding.ActivitySurfacetestBinding
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer

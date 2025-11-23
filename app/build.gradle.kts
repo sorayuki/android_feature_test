@@ -4,13 +4,13 @@ plugins {
 }
 
 android {
-    namespace = "net.sorayuki.demoapp"
+    namespace = "net.sorayuki.featuretest"
     compileSdk {
         version = release(36)
     }
 
     defaultConfig {
-        applicationId = "net.sorayuki.demoapp"
+        applicationId = "net.sorayuki.featuretest"
         minSdk = 29
         targetSdk = 36
         versionCode = 1
