@@ -73,10 +73,18 @@ class SurfaceTestActivity : AppCompatActivity() {
         bgThread.start()
         bgHandler = Handler(bgThread.looper)
 
+        if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
+            eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
+            val eglVer = IntArray(2)
+            if (!EGL14.eglInitialize(eglDisplay, eglVer, 0, eglVer, 1))
+                throw RuntimeException("Fail to init egl environment")
+        }
+        val eglExts = EGL14.eglQueryString(eglDisplay, EGL14.EGL_EXTENSIONS)
+
         val black = Color(0.0f, 0.0f, 0.0f)
 
         val getColor = fun(): Color? {
-            return when (binding.radioGroup.checkedRadioButtonId) {
+            return when (binding.radioGroupContent.checkedRadioButtonId) {
                 binding.radioR.id -> Color(1.0f, 0.0f, 0.0f)
                 binding.radioG.id -> Color(0.0f, 1.0f, 0.0f)
                 binding.radioB.id -> Color(0.0f, 0.0f, 1.0f)
@@ -89,39 +97,46 @@ class SurfaceTestActivity : AppCompatActivity() {
             return clr == null
         }
 
+        val isEnableMetadata = fun(): Boolean { return binding.radioGroupMetadata.checkedRadioButtonId == binding.radioEnableMeta.id }
+
         binding.btnSRGB.setOnClickListener {
             val clr = getColor()
+            val enableMetadata = isEnableMetadata()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false)
-                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, clr ?: black, isnull(clr))
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, enableMetadata, false)
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, clr ?: black, enableMetadata, isnull(clr))
             }
         }
         binding.btnP3.setOnClickListener {
             val clr = getColor()
+            val enableMetadata = isEnableMetadata()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false)
-                draw(8, EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT, clr ?: black, isnull(clr))
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, enableMetadata, false)
+                draw(8, EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT, clr ?: black, enableMetadata, isnull(clr))
             }
         }
         binding.btnBT2020.setOnClickListener {
             val clr = getColor()
+            val enableMetadata = isEnableMetadata()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false)
-                draw(10, EGL_GL_COLORSPACE_BT2020_LINEAR_EXT, clr ?: black, isnull(clr))
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, enableMetadata, false)
+                draw(10, EGL_GL_COLORSPACE_BT2020_LINEAR_EXT, clr ?: black, enableMetadata, isnull(clr))
             }
         }
         binding.btnHLG.setOnClickListener {
             val clr = getColor()
+            val enableMetadata = isEnableMetadata()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false)
-                draw(10, EGL_GL_COLORSPACE_BT2020_HLG_EXT, clr ?: black, isnull(clr))
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, enableMetadata, false)
+                draw(10, EGL_GL_COLORSPACE_BT2020_HLG_EXT, clr ?: black, enableMetadata, isnull(clr))
             }
         }
         binding.btnPQ.setOnClickListener {
             val clr = getColor()
+            val enableMetadata = isEnableMetadata()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false)
-                draw(10, EGL_GL_COLORSPACE_BT2020_PQ_EXT, clr ?: black, isnull(clr))
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, enableMetadata, false)
+                draw(10, EGL_GL_COLORSPACE_BT2020_PQ_EXT, clr ?: black, enableMetadata, isnull(clr))
             }
         }
     }
@@ -130,14 +145,7 @@ class SurfaceTestActivity : AppCompatActivity() {
     var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
     var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
 
-    fun draw(bits: Int, colorspace: Int, clr: Color, shouldDraw: Boolean) {
-        if (eglDisplay == EGL14.EGL_NO_DISPLAY) {
-            eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
-            val eglVer = IntArray(2)
-            if (!EGL14.eglInitialize(eglDisplay, eglVer, 0, eglVer, 1))
-                throw RuntimeException("Fail to init egl environment")
-        }
-
+    fun draw(bits: Int, colorspace: Int, clr: Color, useMetadata: Boolean, shouldDraw: Boolean) {
         if (eglSurface != EGL14.EGL_NO_SURFACE) {
             EGL14.eglDestroySurface(eglDisplay, eglSurface)
             eglSurface = EGL14.EGL_NO_SURFACE
@@ -169,6 +177,43 @@ class SurfaceTestActivity : AppCompatActivity() {
             EGL14.EGL_NONE
         )
         eglSurface = EGL14.eglCreateWindowSurface(eglDisplay, config, surface, surfaceAttr, 0)
+
+        fun setMetadata(minL: Float, maxL: Float, rx: Float, ry: Float, gx: Float, gy: Float, bx: Float, by: Float, wx: Float, wy: Float): Boolean {
+            val EGL_SMPTE2086_DISPLAY_PRIMARY_RX_EXT = 0x3341
+            val EGL_SMPTE2086_DISPLAY_PRIMARY_RY_EXT = 0x3342
+            val EGL_SMPTE2086_DISPLAY_PRIMARY_GX_EXT = 0x3343
+            val EGL_SMPTE2086_DISPLAY_PRIMARY_GY_EXT = 0x3344
+            val EGL_SMPTE2086_DISPLAY_PRIMARY_BX_EXT = 0x3345
+            val EGL_SMPTE2086_DISPLAY_PRIMARY_BY_EXT = 0x3346
+            val EGL_SMPTE2086_WHITE_POINT_X_EXT = 0x3347
+            val EGL_SMPTE2086_WHITE_POINT_Y_EXT = 0x3348
+            val EGL_SMPTE2086_MAX_LUMINANCE_EXT = 0x3349
+            val EGL_SMPTE2086_MIN_LUMINANCE_EXT = 0x334A
+            val EGL_METADATA_SCALING_EXT = 50000
+            return EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_RX_EXT, (rx * EGL_METADATA_SCALING_EXT).toInt()) &&
+                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_RY_EXT, (ry * EGL_METADATA_SCALING_EXT).toInt()) &&
+                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_GX_EXT, (gx * EGL_METADATA_SCALING_EXT).toInt()) &&
+                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_GY_EXT, (gy * EGL_METADATA_SCALING_EXT).toInt()) &&
+                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_BX_EXT, (bx * EGL_METADATA_SCALING_EXT).toInt()) &&
+                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_BY_EXT, (by * EGL_METADATA_SCALING_EXT).toInt()) &&
+                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_WHITE_POINT_X_EXT, (wx * EGL_METADATA_SCALING_EXT).toInt()) &&
+                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_WHITE_POINT_Y_EXT, (wy * EGL_METADATA_SCALING_EXT).toInt()) &&
+                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_MAX_LUMINANCE_EXT, (maxL * EGL_METADATA_SCALING_EXT).toInt()) &&
+                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_MIN_LUMINANCE_EXT, (minL * EGL_METADATA_SCALING_EXT).toInt())
+        }
+
+        if (useMetadata) {
+            val succeed = when(colorspace) {
+                EGL15.EGL_GL_COLORSPACE_LINEAR ->               setMetadata(0.0f, 100.0f,  0.64f,  0.33f,  0.3f,   0.6f,   0.15f,  0.06f,  0.3127f, 0.3290f)
+                EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT -> setMetadata(0.0f, 100.0f,  0.265f, 0.690f, 0.15f,  0.06f,  0.68f,  0.32f,  0.3127f, 0.3290f)
+                EGL_GL_COLORSPACE_BT2020_LINEAR_EXT ->          setMetadata(0.0f, 1000.0f, 0.17f,  0.797f, 0.131f, 0.046f, 0.708f, 0.292f, 0.3127f, 0.3290f)
+                EGL_GL_COLORSPACE_BT2020_HLG_EXT ->             setMetadata(0.0f, 1000.0f, 0.17f,  0.797f, 0.131f, 0.046f, 0.708f, 0.292f, 0.3127f, 0.3290f)
+                EGL_GL_COLORSPACE_BT2020_PQ_EXT ->              setMetadata(0.0f, 1000.0f, 0.17f,  0.797f, 0.131f, 0.046f, 0.708f, 0.292f, 0.3127f, 0.3290f)
+                else -> false
+            }
+            if (!succeed)
+                return
+        }
 
         val contextAttr = intArrayOf(
             EGL15.EGL_CONTEXT_MAJOR_VERSION, 3,
