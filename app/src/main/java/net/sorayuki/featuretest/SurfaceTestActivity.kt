@@ -4,6 +4,7 @@ import android.opengl.*
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.util.Log
 import android.view.Surface
 import android.view.SurfaceHolder
@@ -26,14 +27,33 @@ class SurfaceTestActivity : AppCompatActivity() {
 
     lateinit var binding: ActivitySurfacetestBinding
 
+    val EGL_GL_COLORSPACE_SCRGB_NAME = "EGL_EXT_gl_colorspace_scrgb"
+    val EGL_GL_COLORSPACE_SCRGB_EXT = 0x3351
+    val EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_NAME = "EGL_EXT_gl_colorspace_display_p3_passthrough"
     val EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT = 0x3490
+    val EGL_GL_COLORSPACE_BT2020_LINEAR_NAME = "EGL_EXT_gl_colorspace_bt2020_linear"
     val EGL_GL_COLORSPACE_BT2020_LINEAR_EXT = 0x333F
+    val EGL_GL_COLORSPACE_BT2020_PQ_NAME = "EGL_EXT_gl_colorspace_bt2020_pq"
     val EGL_GL_COLORSPACE_BT2020_PQ_EXT = 0x3340
+    val EGL_GL_COLORSPACE_BT2020_HLG_NAME = "EGL_EXT_gl_colorspace_bt2020_hlg"
     val EGL_GL_COLORSPACE_BT2020_HLG_EXT = 0x3540
 
     val EGL_COLOR_COMPONENT_TYPE_EXT = 0x3339
     val EGL_COLOR_COMPONENT_TYPE_FIXED_EXT = 0x333A
     val EGL_COLOR_COMPONENT_TYPE_FLOAT_EXT = 0x333B
+
+    val EGL_SMPTE2086_EXT_NAME= "EGL_EXT_surface_SMPTE2086_metadata"
+    val EGL_SMPTE2086_DISPLAY_PRIMARY_RX_EXT = 0x3341
+    val EGL_SMPTE2086_DISPLAY_PRIMARY_RY_EXT = 0x3342
+    val EGL_SMPTE2086_DISPLAY_PRIMARY_GX_EXT = 0x3343
+    val EGL_SMPTE2086_DISPLAY_PRIMARY_GY_EXT = 0x3344
+    val EGL_SMPTE2086_DISPLAY_PRIMARY_BX_EXT = 0x3345
+    val EGL_SMPTE2086_DISPLAY_PRIMARY_BY_EXT = 0x3346
+    val EGL_SMPTE2086_WHITE_POINT_X_EXT = 0x3347
+    val EGL_SMPTE2086_WHITE_POINT_Y_EXT = 0x3348
+    val EGL_SMPTE2086_MAX_LUMINANCE_EXT = 0x3349
+    val EGL_SMPTE2086_MIN_LUMINANCE_EXT = 0x334A
+    val EGL_METADATA_SCALING_EXT = 50000
 
     fun LogGlError(operation: String) {
         val err = GLES31.glGetError()
@@ -80,6 +100,16 @@ class SurfaceTestActivity : AppCompatActivity() {
                 throw RuntimeException("Fail to init egl environment")
         }
         val eglExts = EGL14.eglQueryString(eglDisplay, EGL14.EGL_EXTENSIONS)
+        binding.btnScRGB.isEnabled = eglExts.contains(EGL_GL_COLORSPACE_SCRGB_NAME)
+        binding.btnP3.isEnabled = eglExts.contains(EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_NAME)
+        binding.btnBT2020.isEnabled = eglExts.contains(EGL_GL_COLORSPACE_BT2020_LINEAR_NAME)
+        binding.btnHLG.isEnabled = eglExts.contains(EGL_GL_COLORSPACE_BT2020_HLG_NAME)
+        binding.btnPQ.isEnabled = eglExts.contains(EGL_GL_COLORSPACE_BT2020_PQ_NAME)
+        if (!eglExts.contains(EGL_SMPTE2086_EXT_NAME)) {
+            binding.radioDisableMeta.isChecked = true
+            binding.radioEnableMeta.isChecked = false
+            binding.radioGroupMetadata.isEnabled = false
+        }
 
         val black = Color(0.0f, 0.0f, 0.0f)
 
@@ -97,21 +127,32 @@ class SurfaceTestActivity : AppCompatActivity() {
             return clr == null
         }
 
-        val isEnableMetadata = fun(): Boolean { return binding.radioGroupMetadata.checkedRadioButtonId == binding.radioEnableMeta.id }
+        val isEnableMetadata = fun(): Boolean {
+            return binding.radioGroupMetadata.isEnabled &&
+                binding.radioGroupMetadata.checkedRadioButtonId == binding.radioEnableMeta.id
+        }
 
         binding.btnSRGB.setOnClickListener {
             val clr = getColor()
             val enableMetadata = isEnableMetadata()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, enableMetadata, false)
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false, false)
                 draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, clr ?: black, enableMetadata, isnull(clr))
+            }
+        }
+        binding.btnScRGB.setOnClickListener {
+            val clr = getColor()
+            val enableMetadata = isEnableMetadata()
+            bgHandler.post {
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false, false)
+                draw(16, EGL_GL_COLORSPACE_SCRGB_EXT, clr ?: black, enableMetadata, isnull(clr))
             }
         }
         binding.btnP3.setOnClickListener {
             val clr = getColor()
             val enableMetadata = isEnableMetadata()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, enableMetadata, false)
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false, false)
                 draw(8, EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT, clr ?: black, enableMetadata, isnull(clr))
             }
         }
@@ -119,7 +160,7 @@ class SurfaceTestActivity : AppCompatActivity() {
             val clr = getColor()
             val enableMetadata = isEnableMetadata()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, enableMetadata, false)
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false, false)
                 draw(10, EGL_GL_COLORSPACE_BT2020_LINEAR_EXT, clr ?: black, enableMetadata, isnull(clr))
             }
         }
@@ -127,7 +168,7 @@ class SurfaceTestActivity : AppCompatActivity() {
             val clr = getColor()
             val enableMetadata = isEnableMetadata()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, enableMetadata, false)
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false, false)
                 draw(10, EGL_GL_COLORSPACE_BT2020_HLG_EXT, clr ?: black, enableMetadata, isnull(clr))
             }
         }
@@ -135,7 +176,7 @@ class SurfaceTestActivity : AppCompatActivity() {
             val clr = getColor()
             val enableMetadata = isEnableMetadata()
             bgHandler.post {
-                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, enableMetadata, false)
+                draw(8, EGL15.EGL_GL_COLORSPACE_LINEAR, black, false, false)
                 draw(10, EGL_GL_COLORSPACE_BT2020_PQ_EXT, clr ?: black, enableMetadata, isnull(clr))
             }
         }
@@ -179,32 +220,25 @@ class SurfaceTestActivity : AppCompatActivity() {
         eglSurface = EGL14.eglCreateWindowSurface(eglDisplay, config, surface, surfaceAttr, 0)
 
         fun setMetadata(minL: Float, maxL: Float, rx: Float, ry: Float, gx: Float, gy: Float, bx: Float, by: Float, wx: Float, wy: Float): Boolean {
-            val EGL_SMPTE2086_DISPLAY_PRIMARY_RX_EXT = 0x3341
-            val EGL_SMPTE2086_DISPLAY_PRIMARY_RY_EXT = 0x3342
-            val EGL_SMPTE2086_DISPLAY_PRIMARY_GX_EXT = 0x3343
-            val EGL_SMPTE2086_DISPLAY_PRIMARY_GY_EXT = 0x3344
-            val EGL_SMPTE2086_DISPLAY_PRIMARY_BX_EXT = 0x3345
-            val EGL_SMPTE2086_DISPLAY_PRIMARY_BY_EXT = 0x3346
-            val EGL_SMPTE2086_WHITE_POINT_X_EXT = 0x3347
-            val EGL_SMPTE2086_WHITE_POINT_Y_EXT = 0x3348
-            val EGL_SMPTE2086_MAX_LUMINANCE_EXT = 0x3349
-            val EGL_SMPTE2086_MIN_LUMINANCE_EXT = 0x334A
-            val EGL_METADATA_SCALING_EXT = 50000
-            return EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_RX_EXT, (rx * EGL_METADATA_SCALING_EXT).toInt()) &&
-                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_RY_EXT, (ry * EGL_METADATA_SCALING_EXT).toInt()) &&
-                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_GX_EXT, (gx * EGL_METADATA_SCALING_EXT).toInt()) &&
-                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_GY_EXT, (gy * EGL_METADATA_SCALING_EXT).toInt()) &&
-                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_BX_EXT, (bx * EGL_METADATA_SCALING_EXT).toInt()) &&
-                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_BY_EXT, (by * EGL_METADATA_SCALING_EXT).toInt()) &&
-                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_WHITE_POINT_X_EXT, (wx * EGL_METADATA_SCALING_EXT).toInt()) &&
-                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_WHITE_POINT_Y_EXT, (wy * EGL_METADATA_SCALING_EXT).toInt()) &&
-                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_MAX_LUMINANCE_EXT, (maxL * EGL_METADATA_SCALING_EXT).toInt()) &&
-                   EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_MIN_LUMINANCE_EXT, (minL * EGL_METADATA_SCALING_EXT).toInt())
+            val retArray = arrayOf(
+                EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_RX_EXT, (rx * EGL_METADATA_SCALING_EXT).toInt()),
+                EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_RY_EXT, (ry * EGL_METADATA_SCALING_EXT).toInt()),
+                EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_GX_EXT, (gx * EGL_METADATA_SCALING_EXT).toInt()),
+                EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_GY_EXT, (gy * EGL_METADATA_SCALING_EXT).toInt()),
+                EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_BX_EXT, (bx * EGL_METADATA_SCALING_EXT).toInt()),
+                EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_DISPLAY_PRIMARY_BY_EXT, (by * EGL_METADATA_SCALING_EXT).toInt()),
+                EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_WHITE_POINT_X_EXT, (wx * EGL_METADATA_SCALING_EXT).toInt()),
+                EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_WHITE_POINT_Y_EXT, (wy * EGL_METADATA_SCALING_EXT).toInt()),
+                EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_MAX_LUMINANCE_EXT, (maxL * EGL_METADATA_SCALING_EXT).toInt()),
+                EGL14.eglSurfaceAttrib(eglDisplay, eglSurface, EGL_SMPTE2086_MIN_LUMINANCE_EXT, (minL * EGL_METADATA_SCALING_EXT).toInt())
+            )
+            return retArray.all { it }
         }
 
         if (useMetadata) {
             val succeed = when(colorspace) {
-                EGL15.EGL_GL_COLORSPACE_LINEAR ->               setMetadata(0.0f, 100.0f,  0.64f,  0.33f,  0.3f,   0.6f,   0.15f,  0.06f,  0.3127f, 0.3290f)
+                EGL15.EGL_GL_COLORSPACE_LINEAR,
+                EGL_GL_COLORSPACE_SCRGB_EXT ->                  setMetadata(0.0f, 100.0f,  0.64f,  0.33f,  0.3f,   0.6f,   0.15f,  0.06f,  0.3127f, 0.3290f)
                 EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT -> setMetadata(0.0f, 100.0f,  0.68f,  0.32f,  0.265f, 0.690f, 0.15f,  0.06f,  0.3127f, 0.3290f)
                 EGL_GL_COLORSPACE_BT2020_LINEAR_EXT ->          setMetadata(0.0f, 1000.0f, 0.708f, 0.292f, 0.17f,  0.797f, 0.131f, 0.046f, 0.3127f, 0.3290f)
                 EGL_GL_COLORSPACE_BT2020_HLG_EXT ->             setMetadata(0.0f, 1000.0f, 0.708f, 0.292f, 0.17f,  0.797f, 0.131f, 0.046f, 0.3127f, 0.3290f)
@@ -369,12 +403,21 @@ class SurfaceTestActivity : AppCompatActivity() {
                 );
             } else if (uTargetSpace == 3) { // HLG
                 return hlg;
-            } else { // PQ
+            } else if (uTargetSpace == 4) { // PQ
                 vec3 linear = inverseHLGColor(hlg);
                 return vec3(
                     pqOetf(linear.r / 10.0),
                     pqOetf(linear.g / 10.0),
                     pqOetf(linear.b / 10.0)
+                );
+            } else if (uTargetSpace == 5) { // Linear scRGB
+                vec3 linear = inverseHLGColor(hlg);
+                vec3 xyz = BT2020_TO_XYZ * linear;
+                vec3 srgbLinear = XYZ_TO_SRGB * xyz;
+                return vec3(
+                    srgbOetf(srgbLinear.r),
+                    srgbOetf(srgbLinear.g),
+                    srgbOetf(srgbLinear.b)
                 );
             }
         }
@@ -394,11 +437,12 @@ class SurfaceTestActivity : AppCompatActivity() {
         var program = 0
         val quadBuffer = createFullScreenQuad()
         val targetSpaceIndex = when (colorspace) {
+            EGL15.EGL_GL_COLORSPACE_LINEAR, EGL_GL_COLORSPACE_SCRGB_EXT -> 0
             EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT -> 1
             EGL_GL_COLORSPACE_BT2020_LINEAR_EXT -> 2
             EGL_GL_COLORSPACE_BT2020_HLG_EXT -> 3
             EGL_GL_COLORSPACE_BT2020_PQ_EXT -> 4
-            else -> 0
+            else -> 0 // bt.709 srgb
         }
 
         try {

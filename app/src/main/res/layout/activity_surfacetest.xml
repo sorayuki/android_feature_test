@@ -5,6 +5,13 @@
     android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:padding="0dp"
+    android:paddingStart="0dp"
+    android:paddingLeft="0dp"
+    android:paddingTop="0dp"
+    android:paddingEnd="0dp"
+    android:paddingRight="0dp"
+    android:paddingBottom="0dp"
     tools:context=".SurfaceTestActivity">
 
     <LinearLayout
@@ -123,6 +130,13 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="sRGB" />
+
+            <Button
+                android:id="@+id/btn_scRGB"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="scRGB" />
 
             <Button
                 android:id="@+id/btn_P3"
