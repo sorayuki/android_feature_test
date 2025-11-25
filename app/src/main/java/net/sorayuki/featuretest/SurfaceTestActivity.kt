@@ -205,10 +205,10 @@ class SurfaceTestActivity : AppCompatActivity() {
         if (useMetadata) {
             val succeed = when(colorspace) {
                 EGL15.EGL_GL_COLORSPACE_LINEAR ->               setMetadata(0.0f, 100.0f,  0.64f,  0.33f,  0.3f,   0.6f,   0.15f,  0.06f,  0.3127f, 0.3290f)
-                EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT -> setMetadata(0.0f, 100.0f,  0.265f, 0.690f, 0.15f,  0.06f,  0.68f,  0.32f,  0.3127f, 0.3290f)
-                EGL_GL_COLORSPACE_BT2020_LINEAR_EXT ->          setMetadata(0.0f, 1000.0f, 0.17f,  0.797f, 0.131f, 0.046f, 0.708f, 0.292f, 0.3127f, 0.3290f)
-                EGL_GL_COLORSPACE_BT2020_HLG_EXT ->             setMetadata(0.0f, 1000.0f, 0.17f,  0.797f, 0.131f, 0.046f, 0.708f, 0.292f, 0.3127f, 0.3290f)
-                EGL_GL_COLORSPACE_BT2020_PQ_EXT ->              setMetadata(0.0f, 1000.0f, 0.17f,  0.797f, 0.131f, 0.046f, 0.708f, 0.292f, 0.3127f, 0.3290f)
+                EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT -> setMetadata(0.0f, 100.0f,  0.68f,  0.32f,  0.265f, 0.690f, 0.15f,  0.06f,  0.3127f, 0.3290f)
+                EGL_GL_COLORSPACE_BT2020_LINEAR_EXT ->          setMetadata(0.0f, 1000.0f, 0.708f, 0.292f, 0.17f,  0.797f, 0.131f, 0.046f, 0.3127f, 0.3290f)
+                EGL_GL_COLORSPACE_BT2020_HLG_EXT ->             setMetadata(0.0f, 1000.0f, 0.708f, 0.292f, 0.17f,  0.797f, 0.131f, 0.046f, 0.3127f, 0.3290f)
+                EGL_GL_COLORSPACE_BT2020_PQ_EXT ->              setMetadata(0.0f, 1000.0f, 0.708f, 0.292f, 0.17f,  0.797f, 0.131f, 0.046f, 0.3127f, 0.3290f)
                 else -> false
             }
             if (!succeed)
