@@ -11,6 +11,10 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.DemoApp">
+        <uses-native-library android:name="libOpenCL.so" android:required="true" />
+        <activity
+            android:name=".OpenCLTestActivity"
+            android:exported="false" />
         <activity
             android:name=".SurfaceTestActivity"
             android:exported="false" />

@@ -48,6 +48,13 @@ android {
             version = "3.22.1"
         }
     }
+    // 这里KHR提供的源码编译出来的so不知道为什么不能用、不能读取/lib/vendor下对应的so
+    // 所以要排除掉它编出来的，转而声明 uses-native-library 然后使用系统的
+    packaging {
+        jniLibs {
+            excludes += "/lib/**/libOpenCL.so"
+        }
+    }
 }
 
 dependencies {

@@ -26,5 +26,9 @@ class MainActivity : AppCompatActivity() {
         binding.SurfaceTestBtn.setOnClickListener {
             startActivity(Intent(this, SurfaceTestActivity::class.java))
         }
+
+        binding.OpenCLTestBtn.setOnClickListener {
+            startActivity(Intent(this, OpenCLTestActivity::class.java))
+        }
     }
 }

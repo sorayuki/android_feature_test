@@ -25,6 +25,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Test ColorSpace" />
+
+            <Button
+                android:id="@+id/OpenCLTestBtn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Test OpenCL" />
         </LinearLayout>
     </ScrollView>
 </androidx.constraintlayout.widget.ConstraintLayout>
