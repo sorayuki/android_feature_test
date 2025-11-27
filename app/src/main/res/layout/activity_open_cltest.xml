@@ -51,5 +51,25 @@
                 android:layout_weight="0"
                 android:text="TextView" />
         </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/testD2DBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="DeviceToDevice" />
+
+            <TextView
+                android:id="@+id/testD2DResult"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="TextView" />
+        </LinearLayout>
+
     </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>
