@@ -94,27 +94,104 @@ Java_net_sorayuki_featuretest_OpenCLTest_QueryString
     return env->NewStringUTF("(null)");
 }
 
-extern "C" JNIEXPORT jlong JNICALL
-Java_net_sorayuki_featuretest_OpenCLTest_TestHostToDeviceTransfer
-(JNIEnv *env, jobject thiz, jlong self, jint times_400MB) {
-    auto ptr = (OpenCLTest*)self;
-    cl::Buffer hostBuffer(ptr->context, CL_MEM_READ_WRITE, 104857600 * sizeof(uint32_t));
-    auto pBuffer = (uint32_t*)ptr->queue.enqueueMapBuffer(hostBuffer, true, CL_MAP_WRITE, 0, 104857600 * sizeof(uint32_t));
+static void fill_random(cl_uint* ptr, int count) {
     std::random_device randdev;
     std::mt19937 rand(randdev());
-    for(int i = 0; i < 104857600; ++i)
-        pBuffer[i] = rand();
-    ptr->queue.enqueueUnmapMemObject(hostBuffer, pBuffer);
+    for(int i = 0; i < count; ++i)
+        ptr[i] = rand();
+}
 
-    using namespace std::chrono;
-    auto start = steady_clock::now();
-    cl::Buffer clbuffer(ptr->context, CL_MEM_READ_WRITE, 104857600 * sizeof(uint32_t));
-    for(int i = 0; i < times_400MB; ++i) {
-        ptr->queue.enqueueCopyBuffer(hostBuffer, clbuffer, 0, 0, 1048576 * sizeof(uint32_t));
+extern "C" JNIEXPORT jfloat JNICALL
+Java_net_sorayuki_featuretest_OpenCLTest_TestCopy
+(JNIEnv *env, jobject thiz, jlong self, jboolean use_kernel) {
+    auto ptr = (OpenCLTest*)self;
+    cl::Buffer sourceBuffer(ptr->context, CL_MEM_READ_ONLY, 104857600 * sizeof(uint32_t));
+    auto pBuffer = (uint32_t*)ptr->queue.enqueueMapBuffer(sourceBuffer, true, CL_MAP_WRITE, 0, 104857600 * sizeof(uint32_t));
+    fill_random(pBuffer, 104857600);
+    ptr->queue.enqueueUnmapMemObject(sourceBuffer, pBuffer);
+    cl::Buffer dstBuffer(ptr->context, CL_MEM_WRITE_ONLY, 104857600 * sizeof(uint32_t));
+
+    try {
+        auto source = R"__(
+            kernel void copy_buffer(global int* input, global int* output) {
+                int gid = get_global_linear_id();
+                output[gid] = input[gid];
+            }
+        )__";
+        auto prg = cl::Program(ptr->context, source, true);
+        cl::KernelFunctor<cl::Buffer, cl::Buffer> copyBuffer(prg, "copy_buffer");
+
+        using namespace std::chrono;
+        auto start = steady_clock::now();
+        for (int i = 0; i < 100; ++i) {
+            if (use_kernel)
+                copyBuffer(cl::EnqueueArgs(ptr->queue, cl::NDRange(1048576, 100)), sourceBuffer, dstBuffer);
+            else
+                ptr->queue.enqueueCopyBuffer(sourceBuffer, dstBuffer, 0, 0, 104857600 * sizeof(uint32_t));
+        }
+        ptr->queue.finish();
+        auto costMs = (jlong) duration_cast<milliseconds>(steady_clock::now() - start).count();
+        return 100 * sizeof(cl_int) * 100 * 1000.0f / costMs; // 100MB * sizeof(cl_int) * 100 times / seconds
+    } catch(const cl::BuildError& e) {
+        for(auto& x: e.getBuildLog()) {
+            __android_log_write(ANDROID_LOG_ERROR, "SORAYUKI", x.second.c_str());
+        }
+        return 0;
     }
-    ptr->queue.finish();
-    auto ret = (jlong)duration_cast<milliseconds>(steady_clock::now() - start).count();
+}
 
-    ptr->queue.finish();
-    return ret;
+extern "C" JNIEXPORT jfloat JNICALL
+Java_net_sorayuki_featuretest_OpenCLTest_TestIfBranch
+(JNIEnv *env, jobject thiz, jlong self, jboolean hasBranch) {
+    auto ptr = (OpenCLTest*)self;
+    auto src = R"__(
+        kernel void test_branch(global uint* inputs, global uint* outputs) {
+            int gid = get_global_linear_id();
+            if (inputs[gid] % 4 == 0) {
+                outputs[gid] = inputs[gid] + 1;
+            } else if (inputs[gid] % 4 == 1) {
+                outputs[gid] = inputs[gid] - 1;
+            } else if (inputs[gid] % 4 == 2) {
+                outputs[gid] = inputs[gid] * 2;
+            } else if (inputs[gid] % 4 == 3) {
+                outputs[gid] = inputs[gid] / 2;
+            }
+        }
+    )__";
+    try {
+        auto prg = cl::Program(ptr->context, src, true);
+        auto buildlog = prg.getBuildInfo<CL_PROGRAM_BUILD_LOG>();
+        for (auto &x: buildlog) {
+            __android_log_write(ANDROID_LOG_ERROR, "SORAYUKI", x.second.c_str());
+        }
+
+        auto inputBuffer = cl::Buffer(ptr->context, CL_MEM_READ_ONLY, 104857600 * sizeof(cl_uint));
+        if (hasBranch) {
+            auto p = ptr->queue.enqueueMapBuffer(inputBuffer, true, CL_MAP_WRITE, 0, 104857600 * sizeof(cl_uint));
+            fill_random((cl_uint*)p, 104857600);
+            ptr->queue.enqueueUnmapMemObject(inputBuffer, p);
+        } else {
+            cl_uint v = 0;
+            ptr->queue.enqueueFillBuffer(inputBuffer, &v, 0, 104857600 * sizeof(cl_uint));
+        }
+
+        auto outputBuffer = cl::Buffer(ptr->context, CL_MEM_WRITE_ONLY, 104857600 * sizeof(cl_uint));
+
+        ptr->queue.finish();
+
+        using namespace std::chrono;
+        auto start = steady_clock::now();
+        cl::KernelFunctor<cl::Buffer, cl::Buffer> test_branch(prg, "test_branch");
+        for (int i = 0; i < 100; ++i) {
+            test_branch(cl::EnqueueArgs(ptr->queue, cl::NDRange(1048576, 100)), inputBuffer, outputBuffer);
+        }
+        ptr->queue.finish();
+        auto costMs = duration_cast<milliseconds>(steady_clock::now() - start).count();
+        return 100 * sizeof(cl_int) * 100 * 1000.0f / costMs; // 100MB * sizeof(cl_int) * 100 times / seconds
+    } catch(const cl::BuildError& e) {
+        for(auto& x: e.getBuildLog()) {
+            __android_log_write(ANDROID_LOG_ERROR, "SORAYUKI", x.second.c_str());
+        }
+        return 0;
+    }
 }

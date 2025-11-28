@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.view.View
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -52,17 +53,34 @@ class OpenCLTestActivity : AppCompatActivity() {
             }
         }
 
-        binding.testD2DBtn.setOnClickListener {
-            binding.testD2DBtn.isEnabled = false
+
+        val copyTest = fun(useKernel: Boolean, it: View) {
+            it.isEnabled = false
             bgHandler.post {
-                val costMs = cl.TestHostToDeviceTransfer(cl.self, 20)
-                val speed = 400.0f / (costMs / 1000.0f)
+                val speed = cl.TestCopy(cl.self, useKernel)
                 fgHandler.post {
                     binding.testD2DResult.text = "%.2f MB/s".format(speed)
-                    binding.testD2DBtn.isEnabled = true
+                    it.isEnabled = true
                 }
             }
         }
+
+        binding.testAPICopy.setOnClickListener { copyTest(false, it) }
+        binding.testKernelCopy.setOnClickListener { copyTest(true, it) }
+
+        val testBranch = fun(hasBranch: Boolean, it: View) {
+            it.isEnabled = false
+            bgHandler.post {
+                val speed = cl.TestIfBranch(cl.self, hasBranch)
+                fgHandler.post {
+                    binding.testBranchResult.text = "%.2f MB/s".format(speed)
+                    it.isEnabled = true
+                }
+            }
+        }
+
+        binding.testBranch.setOnClickListener { testBranch(true, it) }
+        binding.testNoBranch.setOnClickListener { testBranch(false, it) }
     }
 }
 
@@ -93,5 +111,7 @@ class OpenCLTest: Closeable {
     external fun Init(self: Long): Boolean
     // 1 = device, 2 = platform
     external fun QueryString(self: Long, key: String): String
-    external fun TestHostToDeviceTransfer(self: Long, times_400MB: Int): Long
+    external fun TestCopy(self: Long, useKernel: Boolean): Float
+    //
+    external fun TestIfBranch(self: Long, hasBranch: Boolean): Float
 }
