@@ -53,56 +53,37 @@
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/mainOpLayout"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="invisible">
 
-            <Button
-                android:id="@+id/testAPICopy"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="API Copy" />
+                android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/testKernelCopy"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_weight="0"
-                android:text="Kernel Copy" />
+                <Button
+                    android:id="@+id/testAPICopy"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="API Copy" />
 
-            <TextView
-                android:id="@+id/testD2DResult"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="TextView" />
-        </LinearLayout>
+                <Button
+                    android:id="@+id/testKernelCopy"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="0"
+                    android:text="Kernel Copy" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/testBranch"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_weight="0"
-                android:text="Branch" />
-
-            <Button
-                android:id="@+id/testNoBranch"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_weight="0"
-                android:text="NoBranch" />
-
-            <TextView
-                android:id="@+id/testBranchResult"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_weight="0"
-                android:text="TextView" />
+                <TextView
+                    android:id="@+id/testD2DResult"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="TextView" />
+            </LinearLayout>
         </LinearLayout>
 
     </LinearLayout>

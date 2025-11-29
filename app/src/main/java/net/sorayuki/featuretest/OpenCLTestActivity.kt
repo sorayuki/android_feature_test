@@ -40,15 +40,12 @@ class OpenCLTestActivity : AppCompatActivity() {
         bgHandler.post {
             cl = OpenCLTest()
             if (cl.Init(cl.self)) {
-                cl.QueryString(cl.self, "device_name")?.let {
-                    fgHandler.post {
-                        binding.clDeviceName.text = it
-                    }
-                }
-                cl.QueryString(cl.self, "platform_name")?.let {
-                    fgHandler.post {
-                        binding.clPlatformName.text = it
-                    }
+                val devName = cl.QueryString(cl.self, "device_name")
+                val platName = cl.QueryString(cl.self, "platform_name")
+                fgHandler.post {
+                    binding.clDeviceName.text = devName
+                    binding.clPlatformName.text = platName
+                    binding.mainOpLayout.visibility = View.VISIBLE
                 }
             }
         }
@@ -67,20 +64,6 @@ class OpenCLTestActivity : AppCompatActivity() {
 
         binding.testAPICopy.setOnClickListener { copyTest(false, it) }
         binding.testKernelCopy.setOnClickListener { copyTest(true, it) }
-
-        val testBranch = fun(hasBranch: Boolean, it: View) {
-            it.isEnabled = false
-            bgHandler.post {
-                val speed = cl.TestIfBranch(cl.self, hasBranch)
-                fgHandler.post {
-                    binding.testBranchResult.text = "%.2f MB/s".format(speed)
-                    it.isEnabled = true
-                }
-            }
-        }
-
-        binding.testBranch.setOnClickListener { testBranch(true, it) }
-        binding.testNoBranch.setOnClickListener { testBranch(false, it) }
     }
 }
 
@@ -112,6 +95,4 @@ class OpenCLTest: Closeable {
     // 1 = device, 2 = platform
     external fun QueryString(self: Long, key: String): String
     external fun TestCopy(self: Long, useKernel: Boolean): Float
-    //
-    external fun TestIfBranch(self: Long, hasBranch: Boolean): Float
 }
