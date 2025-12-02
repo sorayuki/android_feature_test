@@ -31,6 +31,8 @@ class OpenCLTestActivity : AppCompatActivity() {
         enableEdgeToEdge()
         binding = ActivityOpenCltestBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        binding.mainOpLayout.visibility = View.GONE
+
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
@@ -64,6 +66,8 @@ class OpenCLTestActivity : AppCompatActivity() {
 
         binding.testAPICopy.setOnClickListener { copyTest(false, it) }
         binding.testKernelCopy.setOnClickListener { copyTest(true, it) }
+        binding.devExtsBtn.setOnClickListener { binding.extensionText.text = cl.QueryString(cl.self, "device_exts").replace(" ", "\n") }
+        binding.platExtsBtn.setOnClickListener { binding.extensionText.text = cl.QueryString(cl.self, "platform_exts").replace(" ", "\n") }
     }
 }
 
@@ -92,7 +96,6 @@ class OpenCLTest: Closeable {
     external fun Create(): Long
     external fun Delete(self: Long)
     external fun Init(self: Long): Boolean
-    // 1 = device, 2 = platform
     external fun QueryString(self: Long, key: String): String
     external fun TestCopy(self: Long, useKernel: Boolean): Float
 }

@@ -85,6 +85,12 @@ Java_net_sorayuki_featuretest_OpenCLTest_QueryString
         } else if (strcmp(pKey, "platform_name") == 0) {
             auto name = ptr->platform.getInfo<CL_PLATFORM_NAME>();
             return env->NewStringUTF(name.c_str());
+        } else if (strcmp(pKey, "device_exts") == 0) {
+            auto extensions = ptr->device.getInfo<CL_DEVICE_EXTENSIONS>();
+            return env->NewStringUTF(extensions.c_str());
+        } else if (strcmp(pKey, "platform_exts") == 0) {
+            auto extensions = ptr->platform.getInfo<CL_PLATFORM_EXTENSIONS>();
+            return env->NewStringUTF(extensions.c_str());
         }
     } catch(const cl::Error& e) {
         std::string msg = "[" + std::to_string(e.err()) + "]" + e.what();
