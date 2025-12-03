@@ -17,7 +17,7 @@ android {
         versionName = "1.0"
         externalNativeBuild {
             cmake {
-                cppFlags += ""
+                arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON")
             }
         }
         ndk {

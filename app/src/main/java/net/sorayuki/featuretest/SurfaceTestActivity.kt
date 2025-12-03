@@ -454,8 +454,11 @@ class SurfaceTestActivity : AppCompatActivity() {
             vertexShader = 0
             fragmentShader = 0
 
-            val rawp010 = ByteBuffer.wrap(resources.openRawResource(R.raw.aqua).readBytes())
+            val srcData = resources.openRawResource(R.raw.aqua).readBytes()
+            val rawp010 = ByteBuffer.allocateDirect(srcData.size)
             rawp010.order(ByteOrder.nativeOrder())
+            rawp010.position(0)
+            rawp010.put(srcData)
             rawp010.position(0)
             uploadPlaneTexture(textures[0], frameWidth, frameHeight, rawp010)
             LogGlError("upload y texture")
