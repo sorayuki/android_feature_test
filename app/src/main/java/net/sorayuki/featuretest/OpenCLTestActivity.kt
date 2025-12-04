@@ -68,6 +68,16 @@ class OpenCLTestActivity : AppCompatActivity() {
         binding.testKernelCopy.setOnClickListener { copyTest(true, it) }
         binding.devExtsBtn.setOnClickListener { binding.extensionText.text = cl.QueryString(cl.self, "device_exts").replace(" ", "\n") }
         binding.platExtsBtn.setOnClickListener { binding.extensionText.text = cl.QueryString(cl.self, "platform_exts").replace(" ", "\n") }
+        binding.testFlops.setOnClickListener {
+            it.isEnabled = false
+            bgHandler.post {
+                val speed = cl.TestCompute(cl.self, "flops")
+                fgHandler.post {
+                    binding.testFlopsResult.text = "%.2f GFLOPS".format(speed / 1000000000.0)
+                    it.isEnabled = true
+                }
+            }
+        }
     }
 }
 
@@ -98,4 +108,5 @@ class OpenCLTest: Closeable {
     external fun Init(self: Long): Boolean
     external fun QueryString(self: Long, key: String): String
     external fun TestCopy(self: Long, useKernel: Boolean): Float
+    external fun TestCompute(self: Long, type: String): Double
 }
