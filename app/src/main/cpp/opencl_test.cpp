@@ -134,7 +134,7 @@ Java_net_sorayuki_featuretest_OpenCLTest_TestCopy
 (JNIEnv *env, jobject thiz, jlong self, jboolean use_kernel) {
     auto ptr = (OpenCLTest*)self;
     cl::Buffer sourceBuffer(ptr->context, CL_MEM_READ_ONLY, 104857600 * sizeof(uint32_t));
-    auto pBuffer = (uint32_t*)ptr->queue.enqueueMapBuffer(sourceBuffer, true, CL_MAP_WRITE, 0, 104857600 * sizeof(uint32_t));
+    auto pBuffer = (uint32_t*)ptr->queue.enqueueMapBuffer(sourceBuffer, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, 104857600 * sizeof(uint32_t));
     fill_random(pBuffer, 104857600);
     ptr->queue.enqueueUnmapMemObject(sourceBuffer, pBuffer);
     cl::Buffer dstBuffer(ptr->context, CL_MEM_WRITE_ONLY, 104857600 * sizeof(uint32_t));
@@ -174,18 +174,18 @@ static double TestFlops(OpenCLTest* ptr) {
     // 转换到 half的输入
     cl::Buffer inputData(ptr->context, CL_MEM_READ_WRITE, 1000 * 1000 * sizeof(cl_half16));
     // 100x100的卷积核，float16
-    cl::Buffer rawConvKern(ptr->context, CL_MEM_READ_ONLY, 100 * 100 * sizeof(cl_float16));
+    cl::Buffer rawConvKern(ptr->context, CL_MEM_READ_ONLY, 10 * 10 * sizeof(cl_float16));
     // 转换到 half的卷积核
-    cl::Buffer convKernData(ptr->context, CL_MEM_READ_WRITE, 100 * 100 * sizeof(cl_half16));
+    cl::Buffer convKernData(ptr->context, CL_MEM_READ_WRITE, 10 * 10 * sizeof(cl_half16));
     // 输出缓冲区
-    cl::Buffer outputData(ptr->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, 900 * 900 * sizeof(cl_half16));
+    cl::Buffer outputData(ptr->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, 990 * 990 * sizeof(cl_half16));
     // 填充输入缓冲区
     auto inbuffer = (cl_float*)ptr->queue.enqueueMapBuffer(rawInput, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, 1000 * 1000 * sizeof(cl_float16));
     fill_random(inbuffer, 1000 * 1000 * 16);
     ptr->queue.enqueueUnmapMemObject(rawInput, inbuffer);
     // 填充卷积核
-    auto kernbuffer = (cl_float*)ptr->queue.enqueueMapBuffer(rawConvKern, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, 100 * 100 * sizeof(cl_float16));
-    fill_random(kernbuffer, 100 * 100 * 16);
+    auto kernbuffer = (cl_float*)ptr->queue.enqueueMapBuffer(rawConvKern, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, 10 * 10 * sizeof(cl_float16));
+    fill_random(kernbuffer, 10 * 10 * 16);
     ptr->queue.enqueueUnmapMemObject(rawConvKern, kernbuffer);
     // kernel程序
     try {
@@ -220,24 +220,24 @@ half16 matmul(half16 lhs, half16 rhs) {
 }
 
 kernel void do_convolution(global half16* inbuf, global half16* kern, global half16* outbuf) {
-    int x = get_global_id(0); // 0 ~ 900
-    int y = get_global_id(1); // 0 ~ 900
+    int x = get_global_id(0); // 0 ~ 990
+    int y = get_global_id(1); // 0 ~ 990
     half16 sum = (half)0.0;
-    for(int j = 0; j < 100; ++j) {
-        for(int i = 0; i < 100; ++i) {
-            half16 lhs = inbuf[(y + j) * 900 + (x + i)];
-            half16 rhs = kern[j * 100 + i];
+    for(int j = 0; j < 10; ++j) {
+        for(int i = 0; i < 10; ++i) {
+            half16 lhs = inbuf[(y + j) * 990 + (x + i)];
+            half16 rhs = kern[j * 10 + i];
             sum += matmul(lhs, rhs);
         }
     }
-    outbuf[y * 900 + x] = sum;
+    outbuf[y * 990 + x] = sum;
 }
 )__";
         cl::Program prg(ptr->context, src, true);
         // 输入数据从单精度浮点转换到半精度浮点
         cl::KernelFunctor<cl::Buffer, cl::Buffer> f32_to_f16(prg, "f32_to_f16");
         f32_to_f16(cl::EnqueueArgs(ptr->queue, cl::NDRange(1000, 1000, 16)), rawInput, inputData);
-        f32_to_f16(cl::EnqueueArgs(ptr->queue, cl::NDRange(100, 100, 16)), rawConvKern, convKernData);
+        f32_to_f16(cl::EnqueueArgs(ptr->queue, cl::NDRange(10, 10, 16)), rawConvKern, convKernData);
         ptr->queue.finish();
 
         cl::KernelFunctor<cl::Buffer, cl::Buffer, cl::Buffer> do_convolution(prg, "do_convolution");
@@ -245,17 +245,18 @@ kernel void do_convolution(global half16* inbuf, global half16* kern, global hal
         using namespace std::chrono;
         auto start = steady_clock::now();
         // 计算卷积
-        int loopCount = 2;
+        int loopCount = 50;
         for(int it = 0; it < loopCount; ++it) {
-            do_convolution(cl::EnqueueArgs(ptr->queue, cl::NDRange(900, 900)), inputData, convKernData, outputData);
+            do_convolution(cl::EnqueueArgs(ptr->queue, cl::NDRange(990, 990)), inputData, convKernData, outputData);
         }
         // 计算耗时
-        ptr->queue.finish();
+        auto outptr = ptr->queue.enqueueMapBuffer(outputData, true, CL_MAP_READ, 0, 990 * 990 * sizeof(cl_half16));
         auto costMs = (jlong) duration_cast<milliseconds>(steady_clock::now() - start).count();
+        ptr->queue.enqueueUnmapMemObject(outputData, outptr);
         // 计算算力，乘法和加法次数统计
         // 重复执行次数 * kernel执行次数 * 卷积核大小 * 计算次数
-        auto mul_count = 1.0 * loopCount * 900 * 900 * 100 * 100 * 16 * 4;
-        auto add_count = 1.0 * loopCount * 900 * 900 * 100 * 100 * (16 * 3 + 16);
+        auto mul_count = 1.0 * loopCount * 990 * 990 * 10 * 10 * 16 * 4;
+        auto add_count = 1.0 * loopCount * 990 * 990 * 10 * 10 * (16 * 3 + 16);
         return (mul_count + add_count) * 1000.0 / costMs;
     } catch(cl::BuildError& e) {
         for(auto& x: e.getBuildLog()) {

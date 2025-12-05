@@ -52,7 +52,6 @@ class OpenCLTestActivity : AppCompatActivity() {
             }
         }
 
-
         val copyTest = fun(useKernel: Boolean, it: View) {
             it.isEnabled = false
             bgHandler.post {
