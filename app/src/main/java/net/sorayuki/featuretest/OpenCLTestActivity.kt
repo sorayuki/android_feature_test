@@ -52,10 +52,10 @@ class OpenCLTestActivity : AppCompatActivity() {
             }
         }
 
-        val copyTest = fun(useKernel: Boolean, it: View) {
+        binding.testKernelCopy.setOnClickListener {
             it.isEnabled = false
             bgHandler.post {
-                val speed = cl.TestCopy(cl.self, useKernel)
+                val speed = cl.TestCompute(cl.self, "copy")
                 fgHandler.post {
                     binding.testD2DResult.text = "%.2f MB/s".format(speed)
                     it.isEnabled = true
@@ -63,10 +63,6 @@ class OpenCLTestActivity : AppCompatActivity() {
             }
         }
 
-        binding.testAPICopy.setOnClickListener { copyTest(false, it) }
-        binding.testKernelCopy.setOnClickListener { copyTest(true, it) }
-        binding.devExtsBtn.setOnClickListener { binding.extensionText.text = cl.QueryString(cl.self, "device_exts").replace(" ", "\n") }
-        binding.platExtsBtn.setOnClickListener { binding.extensionText.text = cl.QueryString(cl.self, "platform_exts").replace(" ", "\n") }
         binding.testFlops.setOnClickListener {
             it.isEnabled = false
             bgHandler.post {
@@ -77,6 +73,9 @@ class OpenCLTestActivity : AppCompatActivity() {
                 }
             }
         }
+
+        binding.devExtsBtn.setOnClickListener { binding.extensionText.text = cl.QueryString(cl.self, "device_exts").replace(" ", "\n") }
+        binding.platExtsBtn.setOnClickListener { binding.extensionText.text = cl.QueryString(cl.self, "platform_exts").replace(" ", "\n") }
     }
 }
 
@@ -106,6 +105,5 @@ class OpenCLTest: Closeable {
     external fun Delete(self: Long)
     external fun Init(self: Long): Boolean
     external fun QueryString(self: Long, key: String): String
-    external fun TestCopy(self: Long, useKernel: Boolean): Float
     external fun TestCompute(self: Long, type: String): Double
 }

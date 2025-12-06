@@ -15,7 +15,10 @@ struct OpenCLTest {
     cl::Platform platform;
     cl::Device device;
     cl::Context context;
-    cl::CommandQueue queue;
+
+    cl::CommandQueue createQueue() {
+        return { context, device };
+    }
 };
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -67,7 +70,6 @@ Java_net_sorayuki_featuretest_OpenCLTest_Init
 
         if (has_device) {
             ptr->context = cl::Context(ptr->device);
-            ptr->queue = cl::CommandQueue(ptr->context, ptr->device);
         }
 
         return has_device;
@@ -129,67 +131,83 @@ static void fill_random(cl_float* ptr, int count) {
         ptr[i] = rand() / (float)RAND_MAX;
 }
 
-extern "C" JNIEXPORT jfloat JNICALL
-Java_net_sorayuki_featuretest_OpenCLTest_TestCopy
-(JNIEnv *env, jobject thiz, jlong self, jboolean use_kernel) {
-    auto ptr = (OpenCLTest*)self;
-    cl::Buffer sourceBuffer(ptr->context, CL_MEM_READ_ONLY, 104857600 * sizeof(uint32_t));
-    auto pBuffer = (uint32_t*)ptr->queue.enqueueMapBuffer(sourceBuffer, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, 104857600 * sizeof(uint32_t));
-    fill_random(pBuffer, 104857600);
-    ptr->queue.enqueueUnmapMemObject(sourceBuffer, pBuffer);
-    cl::Buffer dstBuffer(ptr->context, CL_MEM_WRITE_ONLY, 104857600 * sizeof(uint32_t));
+struct TestCase {
+    OpenCLTest* ptr;
+    cl::CommandQueue queue;
 
-    try {
-        auto source = R"__(
-            kernel void copy_buffer(global int* input, global int* output) {
-                int gid = get_global_linear_id();
-                output[gid] = input[gid];
+    TestCase(OpenCLTest* p): ptr(p) {
+        queue = ptr->createQueue();
+    }
+
+    virtual ~TestCase() {}
+    virtual void Prepare() = 0;
+    virtual cl::Event Run(int loopCount) = 0;
+};
+
+struct TestCopyClass: TestCase {
+    using TestCase::TestCase;
+
+    static constexpr size_t MB = 1048576;
+    static constexpr size_t BUFFER_SIZE = 2; // in uint32_t count
+    static constexpr size_t VECSIZE = 16;
+
+    cl::Buffer sourceBuffer;
+    cl::Buffer dstBuffer;
+    cl::Program prg;
+    bool useKernel = true;
+
+    static constexpr const char* src = R"__(
+        kernel void copy_buffer(global uint16* input, global uint16* output) {
+            int gid = get_global_linear_id();
+            output[gid] = input[gid];
+        }
+    )__";
+
+    void Prepare() override {
+        try {
+            sourceBuffer = cl::Buffer(ptr->context, CL_MEM_READ_ONLY, BUFFER_SIZE * MB * sizeof(cl_uint16));
+            auto pBuffer = (uint32_t*)queue.enqueueMapBuffer(sourceBuffer, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, BUFFER_SIZE * MB * sizeof(cl_uint16));
+            fill_random(pBuffer, BUFFER_SIZE * MB * VECSIZE);
+            queue.enqueueUnmapMemObject(sourceBuffer, pBuffer);
+            dstBuffer = cl::Buffer(ptr->context, CL_MEM_WRITE_ONLY, BUFFER_SIZE * MB * sizeof(cl_uint16));
+
+            prg = cl::Program(ptr->context, src, true);
+        } catch(const cl::BuildError& e) {
+            for(auto& x: e.getBuildLog()) {
+                __android_log_write(ANDROID_LOG_ERROR, "SORAYUKI", x.second.c_str());
             }
-        )__";
-        auto prg = cl::Program(ptr->context, source, true);
+        }
+    }
+
+    cl::Event Run(int loopCount) override {
         cl::KernelFunctor<cl::Buffer, cl::Buffer> copyBuffer(prg, "copy_buffer");
 
-        using namespace std::chrono;
-        auto start = steady_clock::now();
-        for (int i = 0; i < 50; ++i) {
-            if (use_kernel)
-                copyBuffer(cl::EnqueueArgs(ptr->queue, cl::NDRange(1048576, 100)), sourceBuffer, dstBuffer);
+        for (int i = 0; i < loopCount; ++i) {
+            if (useKernel)
+                copyBuffer(cl::EnqueueArgs(queue, cl::NDRange(BUFFER_SIZE, MB)), sourceBuffer, dstBuffer);
             else
-                ptr->queue.enqueueCopyBuffer(sourceBuffer, dstBuffer, 0, 0, 104857600 * sizeof(uint32_t));
+                queue.enqueueCopyBuffer(sourceBuffer, dstBuffer, 0, 0, BUFFER_SIZE * MB * sizeof(cl_uint16));
         }
-        ptr->queue.finish();
-        auto costMs = (jlong) duration_cast<milliseconds>(steady_clock::now() - start).count();
-        return 100 * sizeof(cl_int) * 50 * 1000.0f / costMs; // 100MB * sizeof(cl_int) * 100 times / seconds
-    } catch(const cl::BuildError& e) {
-        for(auto& x: e.getBuildLog()) {
-            __android_log_write(ANDROID_LOG_ERROR, "SORAYUKI", x.second.c_str());
-        }
-        return 0;
+        cl::Event ev;
+        queue.enqueueMarkerWithWaitList(nullptr, &ev);
+        return ev;
     }
-}
+};
 
-static double TestFlops(OpenCLTest* ptr) {
-    // 输入缓冲区，1000x1000个float16
-    cl::Buffer rawInput(ptr->context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, 1000 * 1000 * sizeof(cl_float16));
+
+struct TestFlopsClass: TestCase {
+    using TestCase::TestCase;
+
     // 转换到 half的输入
-    cl::Buffer inputData(ptr->context, CL_MEM_READ_WRITE, 1000 * 1000 * sizeof(cl_half16));
-    // 100x100的卷积核，float16
-    cl::Buffer rawConvKern(ptr->context, CL_MEM_READ_ONLY, 10 * 10 * sizeof(cl_float16));
+    cl::Buffer inputData;
     // 转换到 half的卷积核
-    cl::Buffer convKernData(ptr->context, CL_MEM_READ_WRITE, 10 * 10 * sizeof(cl_half16));
+    cl::Buffer convKernData;
     // 输出缓冲区
-    cl::Buffer outputData(ptr->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, 990 * 990 * sizeof(cl_half16));
-    // 填充输入缓冲区
-    auto inbuffer = (cl_float*)ptr->queue.enqueueMapBuffer(rawInput, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, 1000 * 1000 * sizeof(cl_float16));
-    fill_random(inbuffer, 1000 * 1000 * 16);
-    ptr->queue.enqueueUnmapMemObject(rawInput, inbuffer);
-    // 填充卷积核
-    auto kernbuffer = (cl_float*)ptr->queue.enqueueMapBuffer(rawConvKern, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, 10 * 10 * sizeof(cl_float16));
-    fill_random(kernbuffer, 10 * 10 * 16);
-    ptr->queue.enqueueUnmapMemObject(rawConvKern, kernbuffer);
+    cl::Buffer outputData;
     // kernel程序
-    try {
-        auto src = R"__(
+    cl::Program prg;
+
+    static constexpr const char* src = R"__(
 #pragma OPENCL EXTENSION cl_khr_fp16 : enable
 kernel void f32_to_f16(global float* inbuf, global half* outbuf) {
     int id = get_global_linear_id();
@@ -233,37 +251,73 @@ kernel void do_convolution(global half16* inbuf, global half16* kern, global hal
     outbuf[y * 990 + x] = sum;
 }
 )__";
-        cl::Program prg(ptr->context, src, true);
-        // 输入数据从单精度浮点转换到半精度浮点
-        cl::KernelFunctor<cl::Buffer, cl::Buffer> f32_to_f16(prg, "f32_to_f16");
-        f32_to_f16(cl::EnqueueArgs(ptr->queue, cl::NDRange(1000, 1000, 16)), rawInput, inputData);
-        f32_to_f16(cl::EnqueueArgs(ptr->queue, cl::NDRange(10, 10, 16)), rawConvKern, convKernData);
-        ptr->queue.finish();
 
-        cl::KernelFunctor<cl::Buffer, cl::Buffer, cl::Buffer> do_convolution(prg, "do_convolution");
-        // 开始计时
-        using namespace std::chrono;
-        auto start = steady_clock::now();
-        // 计算卷积
-        int loopCount = 50;
-        for(int it = 0; it < loopCount; ++it) {
-            do_convolution(cl::EnqueueArgs(ptr->queue, cl::NDRange(990, 990)), inputData, convKernData, outputData);
+    void Prepare() {
+        try {
+            // 创建缓冲区
+            // 输入缓冲区，1000x1000个float16
+            cl::Buffer rawInput = cl::Buffer(ptr->context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, 1000 * 1000 * sizeof(cl_float16));
+            inputData = cl::Buffer(ptr->context, CL_MEM_READ_WRITE, 1000 * 1000 * sizeof(cl_half16));
+            // 100x100的卷积核，float16
+            cl::Buffer rawConvKern = cl::Buffer(ptr->context, CL_MEM_READ_ONLY, 10 * 10 * sizeof(cl_float16));
+            convKernData = cl::Buffer(ptr->context, CL_MEM_READ_WRITE, 10 * 10 * sizeof(cl_half16));
+            outputData = cl::Buffer(ptr->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, 990 * 990 * sizeof(cl_half16));
+
+            // 填充输入缓冲区
+            auto inbuffer = (cl_float*)queue.enqueueMapBuffer(rawInput, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, 1000 * 1000 * sizeof(cl_float16));
+            fill_random(inbuffer, 1000 * 1000 * 16);
+            queue.enqueueUnmapMemObject(rawInput, inbuffer);
+
+            // 填充卷积核
+            auto kernbuffer = (cl_float*)queue.enqueueMapBuffer(rawConvKern, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, 10 * 10 * sizeof(cl_float16));
+            fill_random(kernbuffer, 10 * 10 * 16);
+            queue.enqueueUnmapMemObject(rawConvKern, kernbuffer);
+
+            // 编译kernel程序
+            prg = cl::Program(ptr->context, src, true);
+
+            // 输入数据从单精度浮点转换到半精度浮点
+            cl::KernelFunctor<cl::Buffer, cl::Buffer> f32_to_f16(prg, "f32_to_f16");
+            f32_to_f16(cl::EnqueueArgs(queue, cl::NDRange(1000, 1000, 16)), rawInput, inputData);
+            f32_to_f16(cl::EnqueueArgs(queue, cl::NDRange(10, 10, 16)), rawConvKern, convKernData);
+            queue.finish();
+        } catch(cl::BuildError& e) {
+            for(auto& x: e.getBuildLog()) {
+                __android_log_write(ANDROID_LOG_ERROR, "SORAYUKI", x.second.c_str());
+            }
         }
-        // 计算耗时
-        auto outptr = ptr->queue.enqueueMapBuffer(outputData, true, CL_MAP_READ, 0, 990 * 990 * sizeof(cl_half16));
-        auto costMs = (jlong) duration_cast<milliseconds>(steady_clock::now() - start).count();
-        ptr->queue.enqueueUnmapMemObject(outputData, outptr);
-        // 计算算力，乘法和加法次数统计
-        // 重复执行次数 * kernel执行次数 * 卷积核大小 * 计算次数
-        auto mul_count = 1.0 * loopCount * 990 * 990 * 10 * 10 * 16 * 4;
-        auto add_count = 1.0 * loopCount * 990 * 990 * 10 * 10 * (16 * 3 + 16);
-        return (mul_count + add_count) * 1000.0 / costMs;
-    } catch(cl::BuildError& e) {
-        for(auto& x: e.getBuildLog()) {
-            __android_log_write(ANDROID_LOG_ERROR, "SORAYUKI", x.second.c_str());
-        }
-        return 0;
     }
+
+    cl::Event Run(int loopCount) {
+        cl::KernelFunctor<cl::Buffer, cl::Buffer, cl::Buffer> do_convolution(prg, "do_convolution");
+
+        // 计算卷积
+        for(int it = 0; it < loopCount; ++it) {
+            do_convolution(cl::EnqueueArgs(queue, cl::NDRange(990, 990)), inputData, convKernData, outputData);
+        }
+        cl::Event ev;
+        queue.enqueueMarkerWithWaitList(nullptr, &ev);
+        return ev;
+    }
+};
+
+// return: cost in milliseconds
+template<class T>
+int RunTest(OpenCLTest* ptr, int parallelCount, int loopCount) {
+    std::vector<std::optional<T>> testflops(parallelCount);
+    for(auto& t: testflops) {
+        t = {{ ptr }};
+        t->Prepare();
+    }
+    using namespace std::chrono;
+    steady_clock::time_point start = steady_clock::now();
+    std::vector<cl::Event> ev(testflops.size());
+    for(int i = 0; i < testflops.size(); ++i) {
+        ev[i] = testflops[i]->Run(loopCount);
+    }
+    cl::WaitForEvents(ev);
+    return (jlong) duration_cast<milliseconds>(steady_clock::now() - start).count();
+
 }
 
 extern "C" JNIEXPORT jdouble JNICALL
@@ -277,7 +331,19 @@ Java_net_sorayuki_featuretest_OpenCLTest_TestCompute
             env->ReleaseStringUTFChars(type, strTestType);
     }};
 
-    if (strcmp(strTestType, "flops") == 0)
-        return TestFlops(ptr);
+    if (strcmp(strTestType, "copy") == 0) {
+        auto parallelCount = 1;
+        int loopCount = 500;
+        auto costMs = RunTest<TestCopyClass>(ptr, parallelCount, loopCount);
+        return TestCopyClass::BUFFER_SIZE * sizeof(cl_uint16) * loopCount * 1000.0 * parallelCount / (double)costMs; // 50MB * sizeof(cl_int) * loopCount / seconds
+    } 
+    else if (strcmp(strTestType, "flops") == 0) {
+        auto parallelCount = std::thread::hardware_concurrency();
+        int loopCount = 10;
+        auto costMs = RunTest<TestFlopsClass>(ptr, parallelCount, loopCount);
+        // 每次卷积的计算量约为 2 * 990 * 990 * 16 * 16 * 10 * 10 次浮点运算
+        double totalFlops = 2.0 * 990.0 * 990.0 * 16.0 * 16.0 * 10.0 * 10.0 * loopCount * parallelCount;
+        return totalFlops * 1000.0 / (double)costMs;
+    }
     return 0;
 }

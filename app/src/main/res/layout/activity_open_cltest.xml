@@ -75,13 +75,6 @@
                         android:orientation="horizontal">
 
                         <Button
-                            android:id="@+id/testAPICopy"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="API Copy"
-                            android:visibility="gone" />
-
-                        <Button
                             android:id="@+id/testKernelCopy"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
