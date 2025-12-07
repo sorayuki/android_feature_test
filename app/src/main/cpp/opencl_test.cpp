@@ -341,8 +341,8 @@ Java_net_sorayuki_featuretest_OpenCLTest_TestCompute
         auto parallelCount = std::thread::hardware_concurrency();
         int loopCount = 10;
         auto costMs = RunTest<TestFlopsClass>(ptr, parallelCount, loopCount);
-        // 每次卷积的计算量约为 2 * 990 * 990 * 16 * 16 * 10 * 10 次浮点运算
-        double totalFlops = 2.0 * 990.0 * 990.0 * 16.0 * 16.0 * 10.0 * 10.0 * loopCount * parallelCount;
+        // 每次卷积的计算量约为 输入数据(990 * 990) * 卷积核(10 * 10) * 每个元素大小(16) * 每次乘和加外加最后加的运算量(4 + 3 + 1) 次浮点运算
+        double totalFlops = 1.0 * 990 * 990 * 10 * 10 * 16 * (4 + 3 + 1) * loopCount * parallelCount;
         return totalFlops * 1000.0 / (double)costMs;
     }
     return 0;
