@@ -6,7 +6,6 @@
 #include <CL/opencl.hpp>
 
 #include <thread>
-#include <chrono>
 #include <vector>
 #include <random>
 #include <sstream>
@@ -17,7 +16,8 @@ struct OpenCLTest {
     cl::Context context;
 
     cl::CommandQueue createQueue() {
-        return { context, device };
+        cl_command_queue_properties props = CL_QUEUE_PROFILING_ENABLE;
+        return { context, device, props };
     }
 };
 
@@ -141,7 +141,7 @@ struct TestCase {
 
     virtual ~TestCase() {}
     virtual void Prepare() = 0;
-    virtual cl::Event Run(int loopCount) = 0;
+    virtual std::vector<cl::Event> Run(int loopCount) = 0;
 };
 
 struct TestCopyClass: TestCase {
@@ -179,18 +179,21 @@ struct TestCopyClass: TestCase {
         }
     }
 
-    cl::Event Run(int loopCount) override {
+    std::vector<cl::Event> Run(int loopCount) override {
+        std::vector<cl::Event> events;
+        events.reserve(loopCount);
         cl::KernelFunctor<cl::Buffer, cl::Buffer> copyBuffer(prg, "copy_buffer");
 
         for (int i = 0; i < loopCount; ++i) {
             if (useKernel)
-                copyBuffer(cl::EnqueueArgs(queue, cl::NDRange(BUFFER_SIZE, MB)), sourceBuffer, dstBuffer);
-            else
-                queue.enqueueCopyBuffer(sourceBuffer, dstBuffer, 0, 0, BUFFER_SIZE * MB * sizeof(cl_uint16));
+                events.push_back(copyBuffer(cl::EnqueueArgs(queue, cl::NDRange(BUFFER_SIZE, MB)), sourceBuffer, dstBuffer));
+            else {
+                cl::Event ev;
+                queue.enqueueCopyBuffer(sourceBuffer, dstBuffer, 0, 0, BUFFER_SIZE * MB * sizeof(cl_uint16), nullptr, &ev);
+                events.push_back(ev);
+            }
         }
-        cl::Event ev;
-        queue.enqueueMarkerWithWaitList(nullptr, &ev);
-        return ev;
+        return events;
     }
 };
 
@@ -240,7 +243,7 @@ half16 matmul(half16 lhs, half16 rhs) {
 kernel void do_convolution(global half16* inbuf, global half16* kern, global half16* outbuf) {
     int x = get_global_id(0); // 0 ~ 990
     int y = get_global_id(1); // 0 ~ 990
-    half16 sum = (half)0.0;
+    half16 sum = (half16)0.0;
     for(int j = 0; j < 10; ++j) {
         for(int i = 0; i < 10; ++i) {
             half16 lhs = inbuf[(y + j) * 990 + (x + i)];
@@ -288,36 +291,65 @@ kernel void do_convolution(global half16* inbuf, global half16* kern, global hal
         }
     }
 
-    cl::Event Run(int loopCount) {
+    std::vector<cl::Event> Run(int loopCount) override {
+        std::vector<cl::Event> events;
+        events.reserve(loopCount);
         cl::KernelFunctor<cl::Buffer, cl::Buffer, cl::Buffer> do_convolution(prg, "do_convolution");
 
         // 计算卷积
         for(int it = 0; it < loopCount; ++it) {
-            do_convolution(cl::EnqueueArgs(queue, cl::NDRange(990, 990)), inputData, convKernData, outputData);
+            events.push_back(do_convolution(cl::EnqueueArgs(queue, cl::NDRange(990, 990)), inputData, convKernData, outputData));
         }
-        cl::Event ev;
-        queue.enqueueMarkerWithWaitList(nullptr, &ev);
-        return ev;
+        return events;
     }
 };
 
 // return: cost in milliseconds
 template<class T>
-int RunTest(OpenCLTest* ptr, int parallelCount, int loopCount) {
-    std::vector<std::optional<T>> testflops(parallelCount);
-    for(auto& t: testflops) {
-        t = {{ ptr }};
-        t->Prepare();
-    }
-    using namespace std::chrono;
-    steady_clock::time_point start = steady_clock::now();
-    std::vector<cl::Event> ev(testflops.size());
-    for(int i = 0; i < testflops.size(); ++i) {
-        ev[i] = testflops[i]->Run(loopCount);
-    }
-    cl::WaitForEvents(ev);
-    return (jlong) duration_cast<milliseconds>(steady_clock::now() - start).count();
+double RunTest(OpenCLTest* ptr, int parallelCount, int loopCount) {
+    if (parallelCount <= 0)
+        parallelCount = 1;
 
+    std::vector<std::optional<T>> testcases(parallelCount);
+    for (auto &tc : testcases) {
+        tc = {{ ptr }};
+        tc->Prepare();
+    }
+
+    std::vector<std::vector<cl::Event>> perThreadEvents(parallelCount);
+    for (int i = 0; i < parallelCount; ++i)
+        perThreadEvents[i] = testcases[i]->Run(loopCount);
+
+    std::vector<cl::Event> allEvents;
+    size_t totalEventCount = 0;
+    for (const auto &vec : perThreadEvents)
+        totalEventCount += vec.size();
+    allEvents.reserve(totalEventCount);
+    for (auto &vec : perThreadEvents)
+        allEvents.insert(allEvents.end(), vec.begin(), vec.end());
+
+    if (allEvents.empty()) {
+        __android_log_write(ANDROID_LOG_WARN, "SORAYUKI", "No OpenCL events captured; returning 0 ms");
+        return 0.0;
+    }
+
+    cl::WaitForEvents(allEvents);
+
+    double totalNs = 0.0;
+    for (auto &event : allEvents) {
+        try {
+            cl_ulong start = event.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+            cl_ulong end = event.getProfilingInfo<CL_PROFILING_COMMAND_END>();
+            if (end >= start)
+                totalNs += static_cast<double>(end - start);
+        } catch (const cl::Error &err) {
+            std::stringstream ss;
+            ss << "Profiling info failed: code=" << err.err() << ", msg=" << err.what();
+            __android_log_write(ANDROID_LOG_WARN, "SORAYUKI", ss.str().c_str());
+        }
+    }
+
+    return totalNs / 1.0e6;
 }
 
 extern "C" JNIEXPORT jdouble JNICALL
@@ -335,15 +367,19 @@ Java_net_sorayuki_featuretest_OpenCLTest_TestCompute
         auto parallelCount = 1;
         int loopCount = 500;
         auto costMs = RunTest<TestCopyClass>(ptr, parallelCount, loopCount);
+        if (costMs <= 0.0)
+            return 0.0;
         return TestCopyClass::BUFFER_SIZE * sizeof(cl_uint16) * loopCount * 1000.0 * parallelCount / (double)costMs; // 50MB * sizeof(cl_int) * loopCount / seconds
     } 
     else if (strcmp(strTestType, "flops") == 0) {
         auto parallelCount = std::thread::hardware_concurrency();
         int loopCount = 10;
         auto costMs = RunTest<TestFlopsClass>(ptr, parallelCount, loopCount);
-        // 每次卷积的计算量约为 输入数据(990 * 990) * 卷积核(10 * 10) * 每个元素大小(16) * 每次乘和加外加最后加的运算量(4 + 3 + 1) 次浮点运算
-        double totalFlops = 1.0 * 990 * 990 * 10 * 10 * 16 * (4 + 3 + 1) * loopCount * parallelCount;
-        return totalFlops * 1000.0 / (double)costMs;
+        if (costMs <= 0.0)
+            return 0.0;
+         // 每次卷积的计算量约为 输入数据(990 * 990) * 卷积核(10 * 10) * 每个元素大小(16) * 每次乘和加外加最后加的运算量(4 + 3 + 1) 次浮点运算
+         double totalFlops = 1.0 * 990 * 990 * 10 * 10 * 16 * (4 + 3 + 1) * loopCount * parallelCount;
+         return totalFlops * 1000.0 / (double)costMs;
     }
     return 0;
 }
