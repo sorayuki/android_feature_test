@@ -16,8 +16,9 @@ struct OpenCLTest {
     cl::Context context;
 
     cl::CommandQueue createQueue() {
-        cl_command_queue_properties props = CL_QUEUE_PROFILING_ENABLE;
-        return { context, device, props };
+        //cl_command_queue_properties props = CL_QUEUE_PROFILING_ENABLE;
+        //return { context, device, props };
+        return { context, device };
     }
 };
 
@@ -244,7 +245,9 @@ kernel void do_convolution(global half16* inbuf, global half16* kern, global hal
     int x = get_global_id(0); // 0 ~ 990
     int y = get_global_id(1); // 0 ~ 990
     half16 sum = (half16)0.0;
+    #pragma unroll 10
     for(int j = 0; j < 10; ++j) {
+        #pragma unroll 10
         for(int i = 0; i < 10; ++i) {
             half16 lhs = inbuf[(y + j) * 990 + (x + i)];
             half16 rhs = kern[j * 10 + i];
@@ -316,17 +319,14 @@ double RunTest(OpenCLTest* ptr, int parallelCount, int loopCount) {
         tc->Prepare();
     }
 
-    std::vector<std::vector<cl::Event>> perThreadEvents(parallelCount);
-    for (int i = 0; i < parallelCount; ++i)
-        perThreadEvents[i] = testcases[i]->Run(loopCount);
+    using clock = std::chrono::high_resolution_clock;
+    auto start = clock::now();
 
     std::vector<cl::Event> allEvents;
-    size_t totalEventCount = 0;
-    for (const auto &vec : perThreadEvents)
-        totalEventCount += vec.size();
-    allEvents.reserve(totalEventCount);
-    for (auto &vec : perThreadEvents)
-        allEvents.insert(allEvents.end(), vec.begin(), vec.end());
+    for (int i = 0; i < parallelCount; ++i) {
+        auto evs = testcases[i]->Run(loopCount);
+        allEvents.insert(allEvents.end(), evs.begin(), evs.end());
+    }
 
     if (allEvents.empty()) {
         __android_log_write(ANDROID_LOG_WARN, "SORAYUKI", "No OpenCL events captured; returning 0 ms");
@@ -334,22 +334,9 @@ double RunTest(OpenCLTest* ptr, int parallelCount, int loopCount) {
     }
 
     cl::WaitForEvents(allEvents);
+    auto finished = clock::now();
 
-    double totalNs = 0.0;
-    for (auto &event : allEvents) {
-        try {
-            cl_ulong start = event.getProfilingInfo<CL_PROFILING_COMMAND_START>();
-            cl_ulong end = event.getProfilingInfo<CL_PROFILING_COMMAND_END>();
-            if (end >= start)
-                totalNs += static_cast<double>(end - start);
-        } catch (const cl::Error &err) {
-            std::stringstream ss;
-            ss << "Profiling info failed: code=" << err.err() << ", msg=" << err.what();
-            __android_log_write(ANDROID_LOG_WARN, "SORAYUKI", ss.str().c_str());
-        }
-    }
-
-    return totalNs / 1.0e6;
+    return std::chrono::duration_cast<std::chrono::milliseconds>(finished - start).count();
 }
 
 extern "C" JNIEXPORT jdouble JNICALL
@@ -365,7 +352,7 @@ Java_net_sorayuki_featuretest_OpenCLTest_TestCompute
 
     if (strcmp(strTestType, "copy") == 0) {
         auto parallelCount = 1;
-        int loopCount = 500;
+        int loopCount = 300;
         auto costMs = RunTest<TestCopyClass>(ptr, parallelCount, loopCount);
         if (costMs <= 0.0)
             return 0.0;
