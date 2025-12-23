@@ -202,92 +202,78 @@ struct TestCopyClass: TestCase {
 struct TestFlopsClass: TestCase {
     using TestCase::TestCase;
 
-    // 转换到 half的输入
-    cl::Buffer inputData;
-    // 转换到 half的卷积核
-    cl::Buffer convKernData;
-    // 输出缓冲区
-    cl::Buffer outputData;
-    // kernel程序
     cl::Program prg;
+    cl::Buffer outBuffer;
+    
+    static constexpr int globalSize = 2048 * 2048; 
+    static constexpr int innerLoop = 3000;
 
     static constexpr const char* src = R"__(
 #pragma OPENCL EXTENSION cl_khr_fp16 : enable
-kernel void f32_to_f16(global float* inbuf, global half* outbuf) {
+kernel void compute_flops(global half* outbuf, int loops) {
     int id = get_global_linear_id();
-    outbuf[id] = (half)inbuf[id];
-}
+    
+    // Using half16 to maximize register usage and mimic matrix-mul workload
+    // Adreno 840 likely has specialized DOT product / Tensor units
+    // Initialize with runtime ID to prevent optimization
+    half val = (half)(id & 0xFF) * 0.001h;
+    
+    half16 a = (half16)(val);
+    half16 b = (half16)(1.001h);
+    half16 c = (half16)(0.5h);
+    
+    // Accumulators for dot product results
+    half4 sum0 = (half4)(0.0h);
+    half4 sum1 = (half4)(0.0h);
+    half4 sum2 = (half4)(0.0h);
+    half4 sum3 = (half4)(0.0h);
 
-half16 matmul(half16 lhs, half16 rhs) {
-    half16 res;
-
-    res.lo.lo.odd.odd = dot(lhs.lo.lo, rhs.odd.odd);
-    res.lo.hi.odd.odd = dot(lhs.lo.hi, rhs.odd.odd);
-    res.hi.lo.odd.odd = dot(lhs.hi.lo, rhs.odd.odd);
-    res.hi.hi.odd.odd = dot(lhs.hi.hi, rhs.odd.odd);
-    res.lo.lo.even.odd = dot(lhs.lo.lo, rhs.even.odd);
-    res.lo.hi.even.odd = dot(lhs.lo.hi, rhs.even.odd);
-    res.hi.lo.even.odd = dot(lhs.hi.lo, rhs.even.odd);
-    res.hi.hi.even.odd = dot(lhs.hi.hi, rhs.even.odd);
-    res.lo.lo.odd.even = dot(lhs.lo.lo, rhs.odd.even);
-    res.lo.hi.odd.even = dot(lhs.lo.hi, rhs.odd.even);
-    res.hi.lo.odd.even = dot(lhs.hi.lo, rhs.odd.even);
-    res.hi.hi.odd.even = dot(lhs.hi.hi, rhs.odd.even);
-    res.lo.lo.even.even = dot(lhs.lo.lo, rhs.even.even);
-    res.lo.hi.even.even = dot(lhs.lo.hi, rhs.even.even);
-    res.hi.lo.even.even = dot(lhs.hi.lo, rhs.even.even);
-    res.hi.hi.even.even = dot(lhs.hi.hi, rhs.even.even);
-
-    return res;
-}
-
-kernel void do_convolution(global half16* inbuf, global half16* kern, global half16* outbuf) {
-    int x = get_global_id(0); // 0 ~ 990
-    int y = get_global_id(1); // 0 ~ 990
-    half16 sum = (half16)0.0;
-    #pragma unroll 10
-    for(int j = 0; j < 10; ++j) {
-        #pragma unroll 10
-        for(int i = 0; i < 10; ++i) {
-            half16 lhs = inbuf[(y + j) * 990 + (x + i)];
-            half16 rhs = kern[j * 10 + i];
-            sum += matmul(lhs, rhs);
-        }
+    for(int i = 0; i < loops; ++i) {
+        // Mimic the math intensity of a 4x4 matrix multiplication or convolution
+        // Use standard 'dot' built-in which maps to hardware dot-product/tensor units efficiently
+        // Each dot(half4, half4) is considered 8 ops (4 muls + 4 adds convention for peak FLOPs counting)
+        
+        // We perform dots across various swizzles to keep execution ports busy and simulate dependencies
+        // 16 dots per unroll block
+        
+        sum0.x += dot(a.lo.lo, b.lo.lo) + dot(a.lo.hi, b.lo.hi);
+        sum0.y += dot(a.hi.lo, b.hi.lo) + dot(a.hi.hi, b.hi.hi);
+        sum0.z += dot(a.lo.lo, b.hi.lo) + dot(a.lo.hi, b.hi.hi);
+        sum0.w += dot(a.hi.lo, b.lo.lo) + dot(a.hi.hi, b.lo.hi);
+        
+        sum1.x += dot(a.lo.lo, c.lo.lo) + dot(a.lo.hi, c.lo.hi);
+        sum1.y += dot(a.hi.lo, c.hi.lo) + dot(a.hi.hi, c.hi.hi);
+        sum1.z += dot(a.lo.lo, c.hi.lo) + dot(a.lo.hi, c.hi.hi);
+        sum1.w += dot(a.hi.lo, c.lo.lo) + dot(a.hi.hi, c.lo.hi);
+        
+        // Mutate 'a' to prevent loop invariants being lifted (though dot result accumulation helps)
+        a += (half16)(0.0001h);
+        
+        // Another block
+        sum2.x += dot(a.even.even, b.odd.odd) + dot(a.odd.even, b.even.odd);
+        sum2.y += dot(a.even.odd, b.odd.even) + dot(a.odd.odd, b.even.even);
+        sum2.z += dot(a.lo.lo, b.hi.hi) + dot(a.hi.hi, b.lo.lo);
+        sum2.w += dot(a.s0123, b.s3210) + dot(a.s4567, b.s7654); // swizzle fun
+        
+        sum3.x += dot(a.lo.lo, c.lo.lo) + dot(a.lo.hi, c.lo.hi);
+        sum3.y += dot(a.hi.lo, c.hi.lo) + dot(a.hi.hi, c.hi.hi);
+        sum3.z += dot(a.lo.lo, c.hi.lo) + dot(a.lo.hi, c.hi.hi);
+        sum3.w += dot(a.hi.lo, c.lo.lo) + dot(a.hi.hi, c.lo.hi);
+        
+        // Total: 32 dot products per loop
     }
-    outbuf[y * 990 + x] = sum;
+    
+    half4 total = sum0 + sum1 + sum2 + sum3;
+    outbuf[id] = total.x + total.y + total.z + total.w;
 }
 )__";
 
-    void Prepare() {
+    void Prepare() override {
         try {
-            // 创建缓冲区
-            // 输入缓冲区，1000x1000个float16
-            cl::Buffer rawInput = cl::Buffer(ptr->context, CL_MEM_READ_ONLY | CL_MEM_HOST_WRITE_ONLY, 1000 * 1000 * sizeof(cl_float16));
-            inputData = cl::Buffer(ptr->context, CL_MEM_READ_WRITE, 1000 * 1000 * sizeof(cl_half16));
-            // 100x100的卷积核，float16
-            cl::Buffer rawConvKern = cl::Buffer(ptr->context, CL_MEM_READ_ONLY, 10 * 10 * sizeof(cl_float16));
-            convKernData = cl::Buffer(ptr->context, CL_MEM_READ_WRITE, 10 * 10 * sizeof(cl_half16));
-            outputData = cl::Buffer(ptr->context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, 990 * 990 * sizeof(cl_half16));
-
-            // 填充输入缓冲区
-            auto inbuffer = (cl_float*)queue.enqueueMapBuffer(rawInput, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, 1000 * 1000 * sizeof(cl_float16));
-            fill_random(inbuffer, 1000 * 1000 * 16);
-            queue.enqueueUnmapMemObject(rawInput, inbuffer);
-
-            // 填充卷积核
-            auto kernbuffer = (cl_float*)queue.enqueueMapBuffer(rawConvKern, true, CL_MAP_WRITE_INVALIDATE_REGION, 0, 10 * 10 * sizeof(cl_float16));
-            fill_random(kernbuffer, 10 * 10 * 16);
-            queue.enqueueUnmapMemObject(rawConvKern, kernbuffer);
-
-            // 编译kernel程序
+            // 只分配一个输出buffer防止被优化掉
+            outBuffer = cl::Buffer(ptr->context, CL_MEM_WRITE_ONLY, globalSize * sizeof(cl_half)); 
             prg = cl::Program(ptr->context, src, true);
-
-            // 输入数据从单精度浮点转换到半精度浮点
-            cl::KernelFunctor<cl::Buffer, cl::Buffer> f32_to_f16(prg, "f32_to_f16");
-            f32_to_f16(cl::EnqueueArgs(queue, cl::NDRange(1000, 1000, 16)), rawInput, inputData);
-            f32_to_f16(cl::EnqueueArgs(queue, cl::NDRange(10, 10, 16)), rawConvKern, convKernData);
-            queue.finish();
-        } catch(cl::BuildError& e) {
+        } catch(const cl::BuildError& e) {
             for(auto& x: e.getBuildLog()) {
                 __android_log_write(ANDROID_LOG_ERROR, "SORAYUKI", x.second.c_str());
             }
@@ -297,11 +283,10 @@ kernel void do_convolution(global half16* inbuf, global half16* kern, global hal
     std::vector<cl::Event> Run(int loopCount) override {
         std::vector<cl::Event> events;
         events.reserve(loopCount);
-        cl::KernelFunctor<cl::Buffer, cl::Buffer, cl::Buffer> do_convolution(prg, "do_convolution");
+        cl::KernelFunctor<cl::Buffer, int> compute_flops(prg, "compute_flops");
 
-        // 计算卷积
         for(int it = 0; it < loopCount; ++it) {
-            events.push_back(do_convolution(cl::EnqueueArgs(queue, cl::NDRange(990, 990)), inputData, convKernData, outputData));
+            events.push_back(compute_flops(cl::EnqueueArgs(queue, cl::NDRange(globalSize)), outBuffer, innerLoop));
         }
         return events;
     }
@@ -359,13 +344,18 @@ Java_net_sorayuki_featuretest_OpenCLTest_TestCompute
         return TestCopyClass::BUFFER_SIZE * sizeof(cl_uint16) * loopCount * 1000.0 * parallelCount / (double)costMs; // 50MB * sizeof(cl_int) * loopCount / seconds
     } 
     else if (strcmp(strTestType, "flops") == 0) {
-        auto parallelCount = std::thread::hardware_concurrency();
+        auto parallelCount = 1;
         int loopCount = 10;
+        
+        // 256 ops per inner loop (32 dots * 8 ops/dot)
+        double opsPerKernel = 256.0 * TestFlopsClass::innerLoop * TestFlopsClass::globalSize;
+        
         auto costMs = RunTest<TestFlopsClass>(ptr, parallelCount, loopCount);
         if (costMs <= 0.0)
             return 0.0;
-         // 每次卷积的计算量约为 输入数据(990 * 990) * 卷积核(10 * 10) * 每个元素大小(16) * 每次乘和加外加最后加的运算量(4 + 3 + 1) 次浮点运算
-         double totalFlops = 1.0 * 990 * 990 * 10 * 10 * 16 * (4 + 3 + 1) * loopCount * parallelCount;
+            
+         // Total FLOPs = ops_per_kernel * loop_count * parallel_count
+         double totalFlops = opsPerKernel * loopCount * parallelCount;
          return totalFlops * 1000.0 / (double)costMs;
     }
     return 0;
