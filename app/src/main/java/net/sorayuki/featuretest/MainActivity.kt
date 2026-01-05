@@ -30,5 +30,9 @@ class MainActivity : AppCompatActivity() {
         binding.OpenCLTestBtn.setOnClickListener {
             startActivity(Intent(this, OpenCLTestActivity::class.java))
         }
+
+        binding.KinokoTestBtn.setOnClickListener {
+            startActivity(Intent(this, DokuKinokoActivity::class.java))
+        }
     }
 }

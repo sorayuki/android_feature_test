@@ -33,6 +33,9 @@ add_library(${CMAKE_PROJECT_NAME} SHARED
     # List C/C++ source files with relative paths to this CMakeLists.txt.
     featuretest.cpp
     opencl_test.cpp
+    doku.h
+    doku.cpp
+    doku_jni.cpp
 )
 
 # Specifies libraries CMake should link to your target library. You
@@ -44,4 +47,6 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     log
     OpenCL::OpenCL
     OpenCL::HeadersCpp
+    GLESv3
+    EGL
 )
