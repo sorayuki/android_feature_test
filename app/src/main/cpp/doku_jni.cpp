@@ -49,6 +49,13 @@ Java_net_sorayuki_featuretest_DokuKinokoActivity_nativeRender(JNIEnv* env, jobje
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_net_sorayuki_featuretest_DokuKinokoActivity_nativeSetFboSize(JNIEnv* env, jobject /* this */, jint size) {
+    if (g_renderDoku) {
+        g_renderDoku->SetFboSize(size);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_net_sorayuki_featuretest_DokuKinokoActivity_nativeDestroy(JNIEnv* env, jobject /* this */) {
     if (g_renderDoku) {
         delete g_renderDoku;

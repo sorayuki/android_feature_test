@@ -35,6 +35,7 @@ class DokuKinokoActivity : AppCompatActivity(), SurfaceHolder.Callback {
     external fun nativeResize(width: Int, height: Int)
     external fun nativeRender()
     external fun nativeDestroy()
+    external fun nativeSetFboSize(size: Int)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,6 +56,24 @@ class DokuKinokoActivity : AppCompatActivity(), SurfaceHolder.Callback {
         findViewById<Button>(R.id.StartKinoko).setOnClickListener {
             startRendering()
         }
+
+        val fboSizeValue = findViewById<TextView>(R.id.FboSizeValue)
+        val fboSizeSeekBar = findViewById<android.widget.SeekBar>(R.id.FboSizeSeekBar)
+        
+        fboSizeSeekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                // Ensure minimum size to avoid issues
+                val size = if (progress < 128) 128 else progress
+                fboSizeValue.text = size.toString()
+                if (isRunning.get()) {
+                    nativeSetFboSize(size)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+        })
     }
 
     override fun onPause() {
@@ -70,6 +89,11 @@ class DokuKinokoActivity : AppCompatActivity(), SurfaceHolder.Callback {
         
         renderThread = Thread {
             nativeInit(surface)
+            
+            // Apply current FBO size
+            val fboSizeSeekBar = findViewById<android.widget.SeekBar>(R.id.FboSizeSeekBar)
+            val initialSize = if (fboSizeSeekBar.progress < 128) 128 else fboSizeSeekBar.progress
+            nativeSetFboSize(initialSize)
             
             // Force initial resize
             nativeResize(surfaceWidth, surfaceHeight)

@@ -32,10 +32,12 @@ public:
     void Resize(int width, int height);
     void Tick();
     void Render();
+    void SetFboSize(int size);
 
 private:
     GLuint CreateShader(GLenum type, const char* source);
     GLuint CreateProgram(const char* vertexSource, const char* fragmentSource);
+    void UpdateFBO();
     
     GLuint m_program;
     GLuint m_vbo;
@@ -71,5 +73,6 @@ private:
     // Offscreen Rendering
     GLuint m_fbo = 0;
     GLuint m_fboTexture = 0;
-    const int FBO_SIZE = 1024;
+    int FBO_SIZE = 1024;
+    bool m_fboDirty = false;
 };

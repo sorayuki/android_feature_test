@@ -369,6 +369,15 @@ void RenderDoku::Init() {
     glEnableVertexAttribArray(m_aPosition);
 
     // Initialize FBO
+    UpdateFBO();
+}
+
+
+
+void RenderDoku::UpdateFBO() {
+    if (m_fbo) glDeleteFramebuffers(1, &m_fbo);
+    if (m_fboTexture) glDeleteTextures(1, &m_fboTexture);
+
     GLint oldDrawFBO, oldReadFBO;
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &oldDrawFBO);
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oldReadFBO);
@@ -410,7 +419,19 @@ void RenderDoku::Tick() {
     ang1 += 0.01f;
 }
 
+void RenderDoku::SetFboSize(int size) {
+    if (size != FBO_SIZE) {
+        FBO_SIZE = size;
+        m_fboDirty = true;
+    }
+}
+
 void RenderDoku::Render() {
+    if (m_fboDirty) {
+        UpdateFBO();
+        m_fboDirty = false;
+    }
+
     GLint oldDrawFBO, oldReadFBO;
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &oldDrawFBO);
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oldReadFBO);

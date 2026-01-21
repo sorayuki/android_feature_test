@@ -22,7 +22,35 @@
             android:id="@+id/KinokoFramerateTextView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="TextView" />
+            android:text="FPS: 0.0" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="FBO Size:" />
+
+            <SeekBar
+                android:id="@+id/FboSizeSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="1024"
+                android:min="128"
+                android:progress="1024" />
+
+            <TextView
+                android:id="@+id/FboSizeValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1024"
+                android:layout_marginStart="8dp"/>
+        </LinearLayout>
 
         <SurfaceView
             android:id="@+id/KinokoSurface"
